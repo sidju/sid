@@ -1,0 +1,97 @@
+// Most important feature, since every function takes one argument, anonymous structs
+(key: "value", other_key: "other_value")
+// Other literals include:
+// string
+"hello"
+// list
+[1,2,3]
+// set
+{1,2,3}
+// map
+{1:"one",2:"two"}
+
+// To write it to scope use the def function, which takes an anonymous struct
+// with members name: str and val: any as its arguments.
+def (name: "example_struct", val: (key: "value", other_key: "other_value"))
+// Works the same for non-struct types, of course.
+def (name: "my_cool_string", val: "Hello, world!")
+
+// Of course, this language being functional inspired, you should avoid writing
+// to scope, directly chaining your operations where possible. This makes it
+// easier for the language to identify execution-order dependencies and thus
+// parallelize the execution.
+
+// A type constraint is constructed from two parts, a name and a set of valid values
+// To fulfil a type constraint an instance must have a matching type name or no type name AND be a subset of the type set
+type (name: "NonZeroInt", set: set_subtract(minuend: int, subtrahend: 0))
+
+// Declare a non-zero uint type
+def (
+  name: nzuint,
+  val: type (
+    name: NonZeroUInt,
+    set: set_subtract (
+      minuend: uint,
+      subtrahend: 0,
+    ),
+  ),
+)
+
+// It can then be either explicitly instantiated
+nzuint 5
+// Or just create it without a type, which will usually be coerced into the type
+// needed by the function it is fed into, as it then doesn't have a type name.
+5
+
+// Functions are created similarly
+// (Its argument is of the anonymous type (arg: any, ops: set<map<any,any>>|list<map<any,any>>|map<any,any>)
+// aka. it can be either a function, a set of functions to run in "any" order or a list to run in order.)
+// The operations are executed in order if in a list and as parallel as possible if in a set.
+// For fun I'm currently thinking that functions are a type of map, taking a key and returning a value of sorts
+fn (arg: (), ops: {
+  print "Hello, World!",
+})
+fn (arg: (), ops: [
+  print "Hello,",
+  print "World!",
+])
+
+// Function arguments are simply defined in the current scope during execution
+// of the function.
+// And functions return the value that the last line evaluates to.
+def (
+  name: abs,
+  val: fn (
+    arg: (i: int),
+    // A map is treated as a function,
+    // and for this we store functions in it
+    ops: map ( {
+      ( key: true, val: fn (arg: int: i, ops: sub ( minuend: 0, subtrahend: i ) ) ),
+      ( key: false, val: i ),
+    } less-than ( reference: 0, value: i )
+  )
+)
+// TODO, choose a match syntax
+
+
+// Current confusions:
+// - functions with variables, how are variables referenced.
+//     I guess the usual way. By avoiding interpreting function calls in
+//     function declarations that should work intrinsically.
+// - Defining types over structs. How do sets combine? Or is a struct of sets a
+//   valid set? Or just valid for a type constaint?
+//     Just valid for a type constraint makes most sense.
+// - def behaviour, arg to write to an outer scope? Should that be allowed?
+//     Possibly later.
+// - How does it run? Execute everything outside functions like python? Call
+//   into a specific function signature like C?
+//     The python style seems nicer, and more conducive to a REPL CLI for
+//     early testing.
+// - Namespaces?
+//     Definitely later, probably via def supporting "paths".
+// - Methods.
+//     Yes. Probably built via namespaces, like an instance of a type being
+//     treated as equivalent to a namespace of that type's name.
+// - Should code blocks exist, as a sub-scope or immediately executed functions?
+//     Probably more clean to have a function for that behaviour, that accepts a
+//     list or set of evaluations.

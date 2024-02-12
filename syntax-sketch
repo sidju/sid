@@ -1,0 +1,69 @@
+// We should base the syntax on something...
+//
+// First, a language paradigm:
+//   - Functional makes it more likely to naturally parallelize the execution.
+//   - Imperative makes it hard, but gets the widest reach.
+//   - Object oriented would be something small-talk-ish, not what I want.
+//
+// As I don't like writing code and functional should require the least
+// complex system (in essence fewer keywords) based on lisp, I believe that is
+// where I'd go first.
+// Perhaps thereafter some slight moves towards imperative could help make it
+// more usable.
+//
+// Based on that, aim for something like lisp with type annotation/validation.
+
+// Typing concept:
+A user type is declared as a dictionary from member variable names to their type.
+The name of the type is encoded in the type itself, and a type with the same name
+and the same member variable names and types.
+
+// Newer typing concept:
+All types are sets of valid values. They begin with a set of all possible values
+for their type and are then restricted via a special set operation function.
+
+// Base types (All have distinct data representations):
+byte
+int
+uint
+float
+bool
+char
+list[type]
+set[type]
+map[type, type]
+
+// Creating types
+A type is created by instantiating it with the type identities instead of values.
+<type name> <member type>
+
+Type validation is done by verifying validity, where a directional check is done
+to see that the instance is a subset of the type. int is thus a set of all
+integers, uint a set of all non-negative integers, etc.
+This means that you can define a member to be a set of values in the declaration,
+in which case an instance of the type is only valid if that member is one of
+those values or a subset thereof.
+Functions set.union, set.intersection, set.minus allow you to operate to make
+more complex sets for your types. Similarly you can iterate over the contents of
+the existing types into entirely new set instances for your types.
+
+// Structs 
+
+// Instantiating types
+Types can be directly constructed like this.
+<type name>{<member>: <value>, <member2>: <value2>, ...}
+
+// Key symbols:
+Calling a function:
+<fn name> <argument>
+
+Chained function calls
+<first fn> (<second fn> <second fn args>)
+
+Calling a function accepting a custom type
+<fn name> <type_name>{<member>: <value>, ...}
+
+// Key functions:
+fn: construct a function (2 args, any type as only argument and function body)
+def: define a variable in current context (2 args, type and optional value)
+type: construct a type (2 args, name and dict of member name to type)
