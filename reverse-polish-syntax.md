@@ -86,6 +86,21 @@ side-effects.)
 
 ## Examples:
 
+### Declare a value to scope:
+Assuming `def` has argument-decl `{name: str, value: Any}`:
+
+    "approx_pi" 3 def
+
+### A match case:
+Assuming `match` has argument-decl
+`{value: Any, cases: [{case: Type, action: Substack | Script}]}` an invocation
+could be:
+
+    "Yes" [
+      { case: {"yes","Yes","y", "Y"}, action: !(true) },
+      { case: Any, action: !<"That's not a yes" print false> }
+    ] match
+
 ### Declare a function to scope:
 Assuming `def` has argument-decl `{name: str, value: Any}` and `fn` takes
 argument-decl
@@ -115,7 +130,7 @@ the creation of a function to print the same message twice looks like this:
 
 (Formatting praxis is highly debatable.)
 
-### Declare a value to scope:
-Assuming `def` has argument-decl `{name: str, value: Any}`:
-
-    "approx_pi" 3 def
+Executing this function should be functionally equivalent to running the script
+`<duplicate print print>`. The benefit in creating functions is in adding a
+layer of type validation and documentation around the code, aiding the developer
+with more local type errors and function descriptions accessible from debugger.
