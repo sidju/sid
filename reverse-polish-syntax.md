@@ -19,7 +19,7 @@ Identified by optional starting `-` followed by base 10 numbers and at least
 one `.`.
 
 ### char:
-`'a'`, `'👮‍♀️`', `'8'` and such.
+`'a'`, `'👮‍♀️'`, `'8'` and such.
 
 Identified by enclosure by `'`, will error if contents aren't a valid unicode
 grapheme. (Annoying job, but should be done for correctness.)
