@@ -83,3 +83,39 @@ Is executed immediately after parsing unless preceeded by `!`.
 Same input/output type logic as substack, but internal execution is guaranteed
 to be sequential. (Intended use is to order calls to functions with
 side-effects.)
+
+## Examples:
+
+### Declare a function to scope:
+Assuming `def` has argument-decl `{name: str, value: Any}` and `fn` takes
+argument-decl
+
+    {
+      description: str,
+      # The field names are mainly documentation, the order and types are what's
+      # used to take values from the stack.
+      argument-decl: AnyStruct,
+      body: Script | Substack,
+      return-decl: Any,
+    }
+
+the creation of a function to print the same message twice looks like this:
+
+    "print_twice"
+      "Prints given message to stdout twice"
+      { message: str } !<
+        # needed since each print will consume one value from the stack
+        duplicate
+          # Indented relative the data/source of the data it consumes
+          print
+          print
+      >
+      fn
+    def
+
+(Formatting praxis is highly debatable.)
+
+### Declare a value to scope:
+Assuming `def` has argument-decl `{name: str, value: Any}`:
+
+    "approx_pi" 3 def
