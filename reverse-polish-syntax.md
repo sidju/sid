@@ -50,7 +50,7 @@ Held types not required to fully match as that kind of validation should be
 handled by the type system?
 
 ### struct:
-`{1: "one", 2: "two", "two": 2, "one": 1}` and such.
+`{one: "one", two: 2.0, three: 3}` and such.
 
 Identified by enclosure by `{}` and `:` in the first parsing level inside.
 Will return error if there isn't a key for every value inside
