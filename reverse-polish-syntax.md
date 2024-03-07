@@ -1,10 +1,9 @@
 # Syntax plan:
 
-Initial Reverse Polish Notation based functional syntax
+Alternate reverse Polish Notation based functional syntax
 
-Treats functions as functions first but allows "escaping" them by placing a
-`!` in front (specific character definitely in question), since functions are
-more commonly invoked than used as values.
+Treats functions as value first and function second, since that makes the
+handling of functions more consistent with the rest of the language.
 
 ## Literals:
 
@@ -68,10 +67,7 @@ handled by the type system?
 
 Identified by enclosure by `()`.
 
-Is executed immediately after parsing unless preceeded by `!`.
-
-Since it is executed and put on the stack unless preceeded by `!` it can be used
-as a tuple.
+Creates a value that can be executed via `!`.
 
 It does have input types if the functions invoked within take more arguments
 than are enclosed. Likewise it has output types matching the values left on
@@ -82,18 +78,33 @@ the substack after invocation.
 
 Identified by enclosure by `<>`.
 
-Is executed immediately after parsing unless preceeded by `!`.
+Creates a value that can be executed via `!`.
 
 Same input/output type logic as substack, but internal execution is guaranteed
 to be sequential. (Intended use is to order calls to functions with
 side-effects.)
+
+### stack substitution:
+`$1`
+
+Identified by starting `$` followed by a number.
+
+Is only valid inside a meta-literal; list, set, struct, substack or script.
+
+Replaces itself with whatever value is number steps before the start of the
+meta-literal. The value taken is removed from the stack and following entries,
+if any, are pushed back _after_ the meta-literal has been declared.
+
+Is only interpreted if inside the first layer of a meta-literal. For example:
+`a b ($2 ($1))` is interpreted to `b (a ($1))`, since the inner substack's
+stack substitution isn't interpreted until the outer substack is invoked.
 
 ## Examples:
 
 ### Declare a value to scope:
 Assuming `def` has argument-decl `{name: str, value: Any}`:
 
-    "approx_pi" 3 def
+    "approx_pi" 3 def!
 
 ### A match case:
 Assuming `match` has argument-decl
@@ -101,9 +112,9 @@ Assuming `match` has argument-decl
 could be:
 
     "Yes" [
-      { case: {"yes","Yes","y", "Y"}, action: !(true) },
-      { case: Any, action: !<"That's not a yes" print false> }
-    ] match
+      { case: {"yes","Yes","y", "Y"}, action: (true) },
+      { case: Any, action: <"That's not a yes" print! false> }
+    ] match!
 
 ### Declare a function to scope:
 Assuming `def` has argument-decl `{name: str, value: Any}` and `fn` takes
@@ -122,19 +133,19 @@ the creation of a function to print the same message twice looks like this:
 
     "print_twice"
       "Prints given message to stdout twice"
-      { message: str } !<
+      { message: str } <
         # needed since each print will consume one value from the stack
-        duplicate
+        duplicate!
           # Indented relative the data/source of the data it consumes
-          print
-          print
+          print!
+          print!
       >
-      fn
-    def
+      fn!
+    def!
 
 (Formatting praxis is highly debatable.)
 
 Executing this function should be functionally equivalent to running the script
-`<duplicate print print>`. The benefit in creating functions is in adding a
+`<duplicate! print! print!>`. The benefit in creating functions is in adding a
 layer of type validation and documentation around the code, aiding the developer
 with more local type errors and function descriptions accessible from debugger.
