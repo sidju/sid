@@ -1,0 +1,31 @@
+# Assuming the functions:
+# - clone (args: object)
+#   takes one object, returns the same object twice
+# - modulo (args: value, modulo)
+#   takes one number, returns it in given modulo
+# - match (args: list of case+action pairs)
+#   executes the first action whose case matches
+#   (all actions must consume the same number of stack entries)
+# - def (args: name, value)
+#   creates a label with given name and value
+"fizzbuzz" (
+  # Clone the value before the function, since we will consume it for every if
+  clone 15 modulo! [
+    [0, ("fizzbuzz" print! del)],
+    [{3,6,9,12}, ("fizz" print! del)],
+    [{5,10}, ("buzz" print! del)],
+    [Any, (print!)],
+  ] match!
+) def!
+
+# Assuming the functions:
+# - seq (args start, step_size)
+#   creates an unlimited sequence
+# - limit_seq (args sequence, nr_steps)
+#   limits given sequence to nr of steps
+# - sequential_for_each (args function, sequence)
+#   runs given function for every item in the sequence in order
+fizzbuzz
+  1 1 seq!
+    100 limit_seq!
+sequential_for_each!
