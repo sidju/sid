@@ -1,0 +1,67 @@
+ # Evaluates an point on a nurbs curve
+
+Point { x: 0.0, y: 0.0 } def!
+Nurbs { points: [], weights: [], knots: [] } def!
+
+
+find_knot_span (
+    [
+        [ { knots: [], t: float, degree: int }, (
+            res_index degree def!
+            # Remove degree amount form beginning and end
+            inner_ks knots degree knots len degree sub sub_list def!
+
+            { inner_ks, t, res_index } ( 
+                inner_ks len 0 equal inner_ks first t greater_eq or (   # how would one avoid accessing the empty list here?
+                    res_index
+                ) (
+                    { inner_ks 1 skip, t, res_index 1 add } self!
+                ) if!
+             )
+            )
+        ],
+        [ Any, unreachable! ]
+    ] match!
+) def!
+
+evaluate (
+    [
+        [ { nurbs: Nurbs, t: float }, (
+            // compute the degree of the curve
+            degree nurbs knots len nurbs points len sub 1 add def!
+
+            // call function
+            span { nurbs knots, t, degree } find_knot_span def!
+
+            // get sub_lists
+            n_pts nurbs points span degree sub span sub_list def!
+            n_wgh nurbs weights span degree sub span sub_list def!
+
+            pts n_pts n_wgh element_wise_mul def!
+
+            pts (   // Tries to recursively call the first line until pts2 len == 1
+                2 window ( 
+                    /* idk how the fuck to write this... unlerp of the two knots, pts len apart, but shifted with the index of the points... */ 
+                    ) lerp len 1 neq (
+                    self!
+                ) (/*exit recursion*/) if!
+            )
+            // results is just whatever's top of the stack, i.e. ^
+        ) ],
+        [ Any, unreachable! ]
+    ] match!
+) def!
+
+
+## Live Working thoughts:
+# There's a lot of writing things afterwards, which becomes an exercise in memory the more nested your stuff is.
+# Is perhaps obvious from the "reverse-polish" :s
+# 
+# This included a lot more extra syntax rules which I don't think are considered yet
+#
+# This might be less horrible if I knew functional programming, or it might not
+#
+# Feels like I'm writing regex
+#
+# This is probably riddled with off by one, and inconsistencies with how it was written
+# Also the like "relevant part" is shockingly small and There's a lot of bull around it
