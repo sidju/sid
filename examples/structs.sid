@@ -1,0 +1,51 @@
+# Since the general method should be to not save into variables construction,
+# accessing and destructuring of structs needs particular consideration.
+#
+# (The ways to access or destructure all require a substack/script/function.
+# This is considered acceptable since structs are most likely to be used to
+# bundle data needed for substack/script/function input in an easier to manage
+# format. And if not, you can always invoke a substack to access the data.)
+
+
+# Construction by literal
+#
+# As previously specified, but would reasonably support the same kind of
+# back-mapping/back-referencing as substack literals.
+
+15 12 {x: $1, y: 32, z: $2} # Would give {x: 12, y: 32, z: 15}
+15 12 {x: &1, y: 32, z: &2} # Would give 15 12 {x: 12, y: 32, z: 15}
+
+
+# Accessing via back-reference + dot syntax
+#
+# As a back-reference clearly copies the value it fetches it would be safe and
+# predictable to get a part of a struct through it.
+
+{name: "world"} ("Hello, " &1.name "!" concat! concat!)! # Would give {name: "world"} "Hello, world!"
+
+
+# Accessing via label + dot syntax
+#
+# The way most are used to from other languages.
+
+<
+  "point" {x: 5, y: 1} local! # Becomes nothing
+  point.x point.y point.x # Becomes 5 1 5
+>
+
+
+# Destructuring by back-mapping+literal special syntax?
+#
+# If we care to have a way to split structs without copying any of their fields
+# it could be nice to have a way to define the desired order of fields and dump
+# them onto the stack in that order.
+#
+# The . followed by substack or script would then mean that that substack or
+# script is executed with all the fields of the struct as local labels, same as
+# functions most likely will.
+
+{x: 1, y: 3} ($1.(x y)!)! # Becomes 1 3
+
+# (A naive solution would be to just interpret the struct with {x: 1}!, but
+# that is a very fragile solution as the order of the fields could change and
+# ordering of fields in a struct isn't expected to be relevant.)

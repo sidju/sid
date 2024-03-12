@@ -1,0 +1,40 @@
+# With a reverse polish style execution flow there will inevitably come a
+# situation when you need to reorder the stack. These are the two current ideas
+# to deal with this:
+
+
+# Back-mapping:
+#
+# Also a way to take values from the stack when constructing a substack.
+#
+# $n in a substack/script literal takes the value n steps back from the literal
+# ($0 refers to the literal itself)
+
+3 2 1 ($2 $1 $3)! # becomes 2 1 3
+
+
+# Back-referencing:
+#
+# Like back-mapping but without consuming the values used. Performance
+# consequences of copying values etc.
+#
+# Would mainly be needed as a way to access struct members on the stack
+# without consuming the struct (not even partially).
+
+{x: 15, y: 12, z: 4} (&1.x &1.y &1.z)! # becomes 15 12 4
+
+
+# Local labels:
+#
+# Similarly to defining global constants one could make values on the stack
+# into local constants. Is probably not sufficient on its own, but can be
+# helpful. Especially function arguments should probably be local labels.
+#
+# Are initially only usable in scripts, since the definition of the local
+# label is a side effect. But if you define first and construct a substack
+# using the local labels that will still work.
+
+<
+  "x" 15 local! # becomes nothing
+  x x # becomes 15 15
+>!
