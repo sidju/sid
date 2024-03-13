@@ -49,3 +49,14 @@
 # (A naive solution would be to just interpret the struct with {x: 1}!, but
 # that is a very fragile solution as the order of the fields could change and
 # ordering of fields in a struct isn't expected to be relevant.)
+
+
+
+# Special struct+substack combination syntax
+#
+# Would act as a different function syntax, which consumes the struct before it
+# upon invokation and adds all fields of the struct as local labels by default.
+#
+# More useful as a function literal syntax than as a struct destructuring tool.
+
+{x: 4, y: 2} {x: int, y: int}(x y)! # Would become 4 2
