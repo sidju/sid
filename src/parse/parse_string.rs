@@ -21,7 +21,7 @@ pub fn parse_string(
 ) -> Result<String, ParseStringError> {
   match input.next() {
     Some('"') => (),
-    x => panic!("Invalid call to parse_string, first char should be \"."),
+    _ => panic!("Invalid call to parse_string, first char should be \"."),
   }
   //let mut escaped = false;
   let mut data = String::new();
