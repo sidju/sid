@@ -16,18 +16,18 @@ impl std::error::Error for ParseStringError {}
 /// Parse out a quoted string from the given char iterator.
 ///
 /// The first char should be the opening quote.
-pub fn parse_string(
-  input: &mut impl Iterator<Item = char>,
+pub fn parse_string<'a>(
+  input: &mut impl Iterator<Item = &'a str>,
 ) -> Result<String, ParseStringError> {
   match input.next() {
-    Some('"') => (),
+    Some("\"") => (),
     _ => panic!("Invalid call to parse_string, first char should be \"."),
   }
   //let mut escaped = false;
   let mut data = String::new();
   for ch in input { match ch {
-    '"' => { return Ok(data); },
-    x => { data.push(x); },
+    "\"" => { return Ok(data); },
+    x => { data.push_str(x); },
   } }
   // Long term we want to include when the string started, but that's later
   // when we add that context data to the function input

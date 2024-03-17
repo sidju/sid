@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use unicode_segmentation::UnicodeSegmentation;
+
 // We create side-effects through a trait implementation
 // (This allows mocking all side effects in one for testing)
 mod parse;
@@ -46,10 +48,10 @@ impl From<SideEffectFunction> for RealValue {
 
 /// The generic interpreter
 ///
-/// Operates on an iterator of char, returns the state of the data_stack when
-/// it runs out of input.
-pub fn interpret(
-  source_iter: impl Iterator<Item = char>,
+/// Operates on an iterator of grapheme clusters, returns the state of the
+/// data_stack when it runs out of input.
+pub fn interpret<'a>(
+  source_iter: impl Iterator<Item = &'a str>,
   side_effector: &mut dyn SideEffector,
 ) -> Result<Vec<Value>, Box<dyn Error>> {
   // State for the interpreter
@@ -62,19 +64,20 @@ pub fn interpret(
       // Whitespace generally has no significance, but sometimes the sub-parsers
       // may use it to identify the end of their input
       // (We need to take next to not invoke infinitely)
-      ' ' => { iter.next(); },
+      " " => { iter.next(); },
       // Value literals
-      '"' => data_stack.push(RealValue::Str(parse_string(&mut iter)?).into()),
+      "\"" => data_stack.push(RealValue::Str(parse_string(&mut iter)?).into()),
       // Executing a function, substack or script is done separately from its
       // declaration
       // (We need to take next to not invoke infinitely)
-      '!' => { iter.next(); invoke(side_effector, &mut data_stack) },
+      "!" => { iter.next(); invoke(side_effector, &mut data_stack) },
       // A $ means accessing parent context, which inserts a RealValue directly
       // when constructing a literal.
-      '$' => todo!(),
+      "$" => todo!(),
       // Parse number if first char is a digit or minus (start of signed number)
-      x if x.is_ascii_digit() => data_stack.push(parse_number(&mut iter).into()),
-      '-' => data_stack.push(parse_number(&mut iter).into()),
+      x if x.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) => {
+        data_stack.push(parse_number(&mut iter).into())
+      },
       // When it doesn't match a literal we try to resolve it as a label
       // Which also handles if it is a bool
       _ => data_stack.push(parse_label(&mut iter)),
@@ -89,7 +92,7 @@ pub fn interpret_str(
   side_effector: &mut dyn SideEffector,
 ) -> Result<Vec<Value>, Box<dyn Error>> {
   interpret(
-    script.chars(),
+    script.graphemes(true),
     side_effector,
   )
 }
