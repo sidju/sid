@@ -1,8 +1,9 @@
 use super::*;
 
+#[derive(Debug, PartialEq)]
 pub struct MockCall {
-  func: SideEffectFunction,
-  args: Vec<Value>,
+  pub func: SideEffectFunction,
+  pub args: Vec<Value>,
 }
 
 pub struct MockSideEffector {

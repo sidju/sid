@@ -4,10 +4,13 @@ use std::error::Error;
 // (This allows mocking all side effects in one for testing)
 mod parse;
 use parse::*;
-mod invoke;
+pub mod invoke;
 use invoke::{
-  resolve_label,
-  side_effects::SideEffectFunction,
+  invoke,
+  side_effects::{
+    SideEffector,
+    SideEffectFunction,
+  },
 };
 
 #[derive(PartialEq, Debug)]
@@ -19,6 +22,8 @@ pub enum Function {
 #[derive(PartialEq, Debug)]
 pub enum RealValue {
   Str(String),
+  Int(i64),
+  Float(f64),
   Fun(Function),
 }
 
@@ -32,9 +37,9 @@ impl From<RealValue> for Value {
     Self::Real(item)
   }
 }
-impl From<SideEffectFunction> for Value {
+impl From<SideEffectFunction> for RealValue {
   fn from(item: SideEffectFunction) -> Self {
-    Self::Real(RealValue::Fun(Function::SideEffect(item)))
+    RealValue::Fun(Function::SideEffect(item))
   }
 }
 
@@ -43,7 +48,8 @@ impl From<SideEffectFunction> for Value {
 /// Operates on an iterator of char, returns the state of the data_stack when
 /// it runs out of input.
 pub fn interpret(
-  source_iter: impl Iterator<Item = char>
+  source_iter: impl Iterator<Item = char>,
+  side_effector: &mut dyn SideEffector,
 ) -> Result<Vec<Value>, Box<dyn Error>> {
   // State for the interpreter
   let mut data_stack: Vec<Value> = Vec::new();
@@ -54,24 +60,33 @@ pub fn interpret(
     if let Some(val) = iter.peek() { match *val {
       // Whitespace generally has no significance, but sometimes the sub-parsers
       // may use it to identify the end of their input
-      ' ' => (),
+      // (We need to take next to not invoke infinitely)
+      ' ' => { iter.next(); },
       // Value literals
       '"' => data_stack.push(RealValue::Str(parse_string(&mut iter)?).into()),
       // Executing a function, substack or script is done separately from its
       // declaration
-//      '!' => invoke(&mut data_stack)?,
+      // (We need to take next to not invoke infinitely)
+      '!' => { iter.next(); invoke(side_effector, &mut data_stack) },
       // A $ means accessing parent context, which inserts a RealValue directly
       // when constructing a literal.
       '$' => todo!(),
+      // Parse number if first char is a digit or dot (which may be floating point)
+      x if x.is_ascii_digit() => data_stack.push(parse_number(&mut iter).into()),
       // When it doesn't match a literal we try to resolve it as a label
       _ => data_stack.push(Value::Label(parse_label(&mut iter))),
-//      _ => panic!("Unhandled syntax")
     }}
     else { break; }
   }
   Ok(data_stack)
 }
 
-pub fn interpret_str(script: &str) -> Result<Vec<Value>, Box<dyn Error>> {
-  interpret(script.chars())
+pub fn interpret_str(
+  script: &str,
+  side_effector: &mut dyn SideEffector,
+) -> Result<Vec<Value>, Box<dyn Error>> {
+  interpret(
+    script.chars(),
+    side_effector,
+  )
 }
