@@ -25,6 +25,7 @@ pub enum Function {
 pub enum RealValue {
   Bool(bool),
   Str(String),
+  Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
   Fun(Function),
@@ -67,6 +68,7 @@ pub fn interpret<'a>(
       " " => { iter.next(); },
       // Value literals
       "\"" => data_stack.push(RealValue::Str(parse_string(&mut iter)?).into()),
+      "'" => data_stack.push(RealValue::Char(parse_char(&mut iter)).into()),
       // Executing a function, substack or script is done separately from its
       // declaration
       // (We need to take next to not invoke infinitely)

@@ -21,6 +21,24 @@ fn string() {
 }
 
 #[test]
+fn char() {
+  let mut sa = MockSideEffector{calls: Vec::new()};
+  assert_eq!(
+    interpret_str(
+      "'H' '👮‍♀️'",
+      &mut sa,
+    ).unwrap(),
+    vec![
+      RealValue::Char("H".to_owned()).into(),
+      RealValue::Char("👮‍♀️".to_owned()).into(),
+    ],
+  );
+  assert!(
+    sa.calls.is_empty()
+  );
+}
+
+#[test]
 fn label() {
   let mut sa = MockSideEffector{calls: Vec::new()};
   assert_eq!(
