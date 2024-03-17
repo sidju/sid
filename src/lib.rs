@@ -21,6 +21,7 @@ pub enum Function {
 
 #[derive(PartialEq, Debug)]
 pub enum RealValue {
+  Bool(bool),
   Str(String),
   Int(i64),
   Float(f64),
@@ -71,10 +72,12 @@ pub fn interpret(
       // A $ means accessing parent context, which inserts a RealValue directly
       // when constructing a literal.
       '$' => todo!(),
-      // Parse number if first char is a digit or dot (which may be floating point)
+      // Parse number if first char is a digit or minus (start of signed number)
       x if x.is_ascii_digit() => data_stack.push(parse_number(&mut iter).into()),
+      '-' => data_stack.push(parse_number(&mut iter).into()),
       // When it doesn't match a literal we try to resolve it as a label
-      _ => data_stack.push(Value::Label(parse_label(&mut iter))),
+      // Which also handles if it is a bool
+      _ => data_stack.push(parse_label(&mut iter)),
     }}
     else { break; }
   }
