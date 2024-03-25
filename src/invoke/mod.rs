@@ -37,6 +37,6 @@ pub fn invoke(
         side_effector.invoke(y, stack)
       }
     }
-    _ => panic!("Bad input to invoke")
+    x => panic!("Bad input to invoke: {:?}", x),
   }
 }

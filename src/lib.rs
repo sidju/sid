@@ -66,24 +66,20 @@ pub fn parse<'a> (
 }
 
 pub fn interpret<'a>(
-  program: Vec<ProgramValue>,
+  mut program: Vec<ProgramValue>,
   side_effector: &mut dyn SideEffector,
   global_scope: HashMap<String, RealValue>,
 ) -> Result<Vec<Value>, Box<dyn Error>> {
-  todo!()
-}
-
-pub fn interpret_str(
-  script: &str,
-  side_effector: &mut dyn SideEffector,
-) -> Result<Vec<Value>, Box<dyn Error>> {
-  let mut scope = HashMap::new();
-  todo!();
-  interpret(
-    parse_str(script)?,
-    side_effector,
-    scope,
-  )
+  // Repeatedly pop the next program instruction off the program stack and
+  // interpret it
+  let mut data_stack: Vec<Value> = Vec::new();
+  use ProgramValue as PV;
+  for operation in program { match operation {
+    PV::Real(v) => { data_stack.push(Value::Real(v)); },
+    PV::Label(l) => { data_stack.push(Value::Label(l)); },
+    PV::Invoke => { invoke(side_effector, &mut data_stack); },
+  } }
+  Ok(data_stack)
 }
 
 pub fn parse_str(
@@ -91,5 +87,17 @@ pub fn parse_str(
 ) -> Result<Vec<ProgramValue>, Box<dyn Error>> {
   parse(
     script.graphemes(true),
+  )
+}
+
+pub fn interpret_str(
+  script: &str,
+  side_effector: &mut dyn SideEffector,
+) -> Result<Vec<Value>, Box<dyn Error>> {
+  let mut scope = HashMap::new();
+  interpret(
+    parse_str(script)?,
+    side_effector,
+    scope,
   )
 }
