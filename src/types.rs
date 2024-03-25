@@ -1,96 +1,59 @@
-use std::collections::{
-  HashMap,
-  HashSet,
-};
+use super::SideEffectFunction;
 
-// TODO: Add a filters restriction for all of these which takes list of functions returning bool
-//       (if the function returns false for a valid it isn't valid for the restriction)
-struct BoolRestrictions {
-  not_equal: Option<bool>,
-}
-struct NumberRestrictions<T> {
-  not_equal: Option<T>,
-  greater_than: Option<T>,
-  less_than: Option<T>,
-}
-struct CharRestrictions {
-}
-struct StringRestrictions {
-}
-struct ContainerRestrictions {
-  size_greater_than: Option<usize>,
-  size_less_than: Option<usize>,
-  does_not_contain: Vec<Value>
-}
-struct FunctionType {
-  argument: Type,
-  output: Type,
+#[derive(PartialEq, Debug)]
+pub enum Function {
+  SideEffect(SideEffectFunction),
+//  BuiltIn(BuiltInFunction),
 }
 
-enum Type {
-  Nil, // We don't allow restrictions on nil, as none make sense
-  Literal(Value), // Only this value is allowed
-  Bool(BoolRestrictions),
-  Byte(NumberRestrictions<u8>),
-  Int(NumberRestrictions<i64>),
-  Float(NumberRestrictions<f64>),
-  Char(CharRestrictions),
-  Str(StringRestrictions),
-  // Container types specify allowed contained type and their own restrictions
-  List(Box<Self>, ContainerRestrictions),
-  Set(Box<Self>, ContainerRestrictions),
-  Map{key: Box<Self>, val: Box<Self>, restrictions: ContainerRestrictions},
-  // Same for meta-types, but they don't have inherent restrictions
-  Struct(HashMap<String, Self>),
-  Union(HashSet<Self>),
-  Fn(FunctionType),
-}
-
-// Separated from MetaValue so they can derive Hash
-#[derive(PartialEq, Hash)]
-enum HashableValue {
-  Nil,
+#[derive(PartialEq, Debug)]
+pub enum RealValue {
   Bool(bool),
-  Byte(u8),
-  Int(i64),
-  Char(String), // Full grapheme cluster
   Str(String),
-}
-#[derive(PartialEq)]
-enum NonHashableValue {
+  Char(String), // Holds a full grapheme cluster, which requires a string
+  Int(i64),
   Float(f64),
+  Fun(Function),
 }
-enum ContainerValue {
-  // Meta types need to keep data with its type instance attached
-  List(Vec<(Value, Type)>),
-  Set(HashSet<(Value, Type)>),
-  // We only allow base values as key, since they derive Hash
-  Map(HashMap<HashableValue, (Value, Type)>),
-  Struct(HashMap<String, (Value, Type)>),
+impl From<SideEffectFunction> for RealValue {
+  fn from(item: SideEffectFunction) -> Self {
+    RealValue::Fun(Function::SideEffect(item))
+  }
 }
-struct OrderedFn {
-  argument: Type,
-  return: Type,
-  operations: Vec<Function>,
+
+#[derive(PartialEq, Debug)]
+pub enum Value {
+  Real(RealValue),
+  Label(String),
 }
-struct UnorderedFn {
-  argument: Type,
-  return: Type,
-  operations: HashSet<Function>,
+impl From<RealValue> for Value {
+  fn from(item: RealValue) -> Self {
+    Self::Real(item)
+  }
 }
-enum FunctionImplementation {
-  BuiltIn(String), // Key to function table
-  Ordered(OrderedFn),
-  Unordered(UnorderedFn),
+
+// The values of the program as they look after parsing (before execution)
+#[derive(PartialEq, Debug)]
+pub enum ProgramValue{
+  Real(RealValue),
+  Label(String),
+  Invoke,
+//  SubstackTemplate,
+//  ScriptTemplate,
+//  StructTemplate,
+//  ListTemplate,
+//  SetTemplate,
 }
-struct Function {
-  type: FunctionType,
-  implementation: FunctionImplementation,
+impl From<Value> for ProgramValue {
+  fn from(item: Value) -> Self {
+    match item {
+      Value::Real(x) => Self::Real(x),
+      Value::Label(l) => Self::Label(l),
+    }
+  }
 }
-#[derive(PartialEq)]
-enum Value {
-  HashableValue,
-  NonHashableValue,
-  ContainerValue,
-  Fn(Function),
+impl From<RealValue> for ProgramValue {
+  fn from(item: RealValue) -> Self {
+    Self::Real(item)
+  }
 }
