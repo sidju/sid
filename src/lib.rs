@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::collections::HashMap;
 
-use unicode_segmentation::UnicodeSegmentation;
-
 // We create side-effects through a trait implementation
 // (This allows mocking all side effects in one for testing)
 mod parse;
@@ -10,6 +8,8 @@ use parse::*;
 pub mod invoke;
 use invoke::{
   invoke,
+  resolve_label,
+  realize_value,
   side_effects::{
     SideEffector,
     SideEffectFunction,
@@ -22,48 +22,9 @@ pub use types::{
   RealValue,
   ProgramValue,
   Function,
+  Template,
+  TemplateValue,
 };
-
-/// The generic parser
-///
-/// Operates on an iterator of grapheme clusters, returns the parsed program
-/// stack. (which can then be invoked)
-pub fn parse<'a> (
-  source_iter: impl Iterator<Item = &'a str>,
-) -> Result<Vec<ProgramValue>, Box<dyn Error>> {
-  // State for the interpreter
-  let mut parsed_program: Vec<ProgramValue> = Vec::new();
-  // Make the iterator peekable and then peek to choose which parsing function
-  // to call into.
-  let mut iter = source_iter.peekable();
-  loop {
-    if let Some(val) = iter.peek() { match *val {
-      // Whitespace generally has no significance, but sometimes the sub-parsers
-      // may use it to identify the end of their input
-      // (We need to take next to not invoke infinitely)
-      " " => { iter.next(); },
-      // Value literals
-      "\"" => parsed_program.push(RealValue::Str(parse_string(&mut iter)?).into()),
-      "'" => parsed_program.push(RealValue::Char(parse_char(&mut iter)).into()),
-      // Executing a function, substack or script is done separately from its
-      // declaration
-      // (We need to take next to not invoke infinitely)
-      "!" => { iter.next(); parsed_program.push(ProgramValue::Invoke); },
-      // A $ means accessing parent context, which inserts a RealValue directly
-      // when constructing a literal.
-      "$" => todo!(),
-      // Parse number if first char is a digit or minus (start of signed number)
-      x if x.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) => {
-        parsed_program.push(parse_number(&mut iter).into())
-      },
-      // When it doesn't match a literal we try to resolve it as a label
-      // Which also handles if it is a bool
-      _ => parsed_program.push(parse_label(&mut iter).into()),
-    }}
-    else { break; }
-  }
-  Ok(parsed_program)
-}
 
 pub fn interpret<'a>(
   mut program: Vec<ProgramValue>,
@@ -77,17 +38,22 @@ pub fn interpret<'a>(
   for operation in program { match operation {
     PV::Real(v) => { data_stack.push(Value::Real(v)); },
     PV::Label(l) => { data_stack.push(Value::Label(l)); },
+    PV::Template{consumed_stack_entries, source} => {
+      if consumed_stack_entries > data_stack.len() {
+        panic!("Template consumes more stack entries than there are.");
+      }
+      let consumed_stack = data_stack.split_off(
+        data_stack.len() - consumed_stack_entries
+      );
+      data_stack.push(render_template(
+        consumed_stack,
+        &global_scope,
+        source,
+      ).into());
+    },
     PV::Invoke => { invoke(side_effector, &mut data_stack); },
   } }
   Ok(data_stack)
-}
-
-pub fn parse_str(
-  script: &str,
-) -> Result<Vec<ProgramValue>, Box<dyn Error>> {
-  parse(
-    script.graphemes(true),
-  )
 }
 
 pub fn interpret_str(
@@ -100,4 +66,30 @@ pub fn interpret_str(
     side_effector,
     scope,
   )
+}
+
+pub fn render_template(
+  mut consumed_stack: Vec<Value>,
+  global_scope: &HashMap<String, RealValue>,
+  template: Template,
+) -> RealValue {
+  let mut consumed_stack: Vec<Option<RealValue>> = consumed_stack.drain(..).map(
+    |x| Some(realize_value(x))
+  ).collect();
+  use Template as T;
+  match template {
+    T::SubstackTemplate(source) => {
+      let mut rendered: Vec<ProgramValue> = Vec::new();
+      use TemplateValue as TV;
+      for entry in source { match entry {
+        TV::Literal(v) => { rendered.push(v); },
+        TV::ParentLabel(l) => { rendered.push(resolve_label(&l).into()); },
+        TV::ParentStackMove(i) => {
+          let value = consumed_stack[i].take().expect("Stack value taken twice in template");
+          rendered.push(value.into()); 
+        },
+      }}
+      RealValue::Substack(rendered)
+    },
+  }
 }

@@ -13,6 +13,7 @@ pub enum RealValue {
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
+  Substack(Vec<ProgramValue>),
   Fun(Function),
 }
 impl From<SideEffectFunction> for RealValue {
@@ -38,7 +39,15 @@ pub enum ProgramValue{
   Real(RealValue),
   Label(String),
   Invoke,
-//  SubstackTemplate,
+  Template{
+    consumed_stack_entries: usize,
+    source: Template,
+  },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum Template {
+  SubstackTemplate(Vec<TemplateValue>),
 //  ScriptTemplate,
 //  StructTemplate,
 //  ListTemplate,
@@ -56,4 +65,12 @@ impl From<RealValue> for ProgramValue {
   fn from(item: RealValue) -> Self {
     Self::Real(item)
   }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum TemplateValue{
+  ParentLabel(String),
+  ParentStackMove(usize),
+//  ParentStackCopy(usize), // Maybe?
+  Literal(ProgramValue),
 }
