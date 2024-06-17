@@ -33,14 +33,14 @@ pub enum Function {
 //  BuiltIn(BuiltInFunction),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum RealValue {
   Bool(bool),
   Str(String),
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
-//  Substack(Vec<ProgramValue>),
+  Substack(Vec<ProgramValue>),
 //  Fun(Function),
 }
 
@@ -56,7 +56,7 @@ impl From<RealValue> for DataValue {
 }
 
 // The values of the program as they look after parsing (before execution)
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ProgramValue{
   Real(RealValue),
   Label(String),
@@ -64,21 +64,21 @@ pub enum ProgramValue{
   Template(Template),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Template {
-  template: TemplateData,
+  data: TemplateData,
   consumes_stack_entries: usize,
 }
 impl Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
     Self{
-      template: TemplateData::SubstackTemplate(parsed.0),
+      data: TemplateData::SubstackTemplate(parsed.0),
       consumes_stack_entries: parsed.1,
     }
   }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum TemplateData {
   SubstackTemplate(Vec<TemplateValue>),
 //  ScriptTemplate,
@@ -105,7 +105,7 @@ impl From<Template> for ProgramValue {
   }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum TemplateValue{
   ParentLabel(String),
   ParentStackMove(usize),

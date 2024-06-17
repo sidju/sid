@@ -1,12 +1,11 @@
-
 // We create side-effects through a trait implementation
 // (This allows mocking all side effects in one for testing)
 mod types;
 pub use types::*;
 mod parse;
 pub use parse::*;
-//mod render;
-//pub use render::*;
+mod render;
+pub use render::*;
 //pub mod invoke;
 //use invoke::{
 //  invoke,

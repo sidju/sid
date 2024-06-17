@@ -4,7 +4,6 @@ pub fn parse_number<'a>(
   input: &mut Peekable<Graphemes>,
 ) -> RealValue {
   let mut float = false;
-  let mut signed = false;
   let mut agg = String::new();
   loop { if let Some(ch) = input.peek() {
     match *ch {
