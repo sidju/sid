@@ -16,3 +16,9 @@ SID was originally conceived to try out two concepts:
   - Filter operations to modify the sets in ways the compiler can easily reason
     about are provided, such as forbidding a set of values or only allowing
     values above/below a given value.
+
+It has thereafter grown to have another goal:
+
+- Define a very simplified semi-low-level assembly, intended to offer CPUs more
+  freedom to optimise the execution.
+

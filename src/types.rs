@@ -1,8 +1,35 @@
-use super::SideEffectFunction;
+/// Defines the possible types at each stage of the execution process.
+///
+/// # Parsing -> TemplateValue:
+/// Parsing returns a list of TemplateValue and the number of parent stack
+/// entries needed to render it into a list of ProgramValue ready for execution.
+///
+/// # Rendering -> ProgramValue:
+/// Parent stack is consumed and Parent label context read as needed to
+/// Convert all TemplateValues into ProgramValues. When this is done the values
+/// are ready to put on the program stack.
+///
+/// # Execution -> DataValue:
+/// ProgramValue is a value ready to be executed, but not necessarily valid to
+/// write onto the stack. Real and Label can be written directly, but Templates
+/// are rendered into their concrete objects before writing them to the Stack
+/// and Invoke tries to call the value on the top of the stack as a function.
+///
+///
+/// # Extra confusion:
+/// ProgramValue:s cannot be written to the data stack, but a Substack or
+/// function can be written to the data stack even though it contains them.
+///
+/// As such, while a Template can't be written to the stack, a Substack
+/// containing a Template can be handed around freely. This means that that
+/// template is rendered when the Substack is invoked.
+///
+/// The allowed types are a structure of data lifecycle, not a restriction on
+/// what is possible.
 
 #[derive(PartialEq, Debug)]
 pub enum Function {
-  SideEffect(SideEffectFunction),
+//  SideEffect(SideEffectFunction),
 //  BuiltIn(BuiltInFunction),
 }
 
@@ -13,21 +40,16 @@ pub enum RealValue {
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
-  Substack(Vec<ProgramValue>),
-  Fun(Function),
-}
-impl From<SideEffectFunction> for RealValue {
-  fn from(item: SideEffectFunction) -> Self {
-    RealValue::Fun(Function::SideEffect(item))
-  }
+//  Substack(Vec<ProgramValue>),
+//  Fun(Function),
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Value {
+pub enum DataValue {
   Real(RealValue),
   Label(String),
 }
-impl From<RealValue> for Value {
+impl From<RealValue> for DataValue {
   fn from(item: RealValue) -> Self {
     Self::Real(item)
   }
@@ -39,31 +61,47 @@ pub enum ProgramValue{
   Real(RealValue),
   Label(String),
   Invoke,
-  Template{
-    consumed_stack_entries: usize,
-    source: Template,
-  },
+  Template(Template),
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Template {
+pub struct Template {
+  template: TemplateData,
+  consumes_stack_entries: usize,
+}
+impl Template {
+  pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
+    Self{
+      template: TemplateData::SubstackTemplate(parsed.0),
+      consumes_stack_entries: parsed.1,
+    }
+  }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum TemplateData {
   SubstackTemplate(Vec<TemplateValue>),
 //  ScriptTemplate,
 //  StructTemplate,
 //  ListTemplate,
 //  SetTemplate,
 }
-impl From<Value> for ProgramValue {
-  fn from(item: Value) -> Self {
+impl From<DataValue> for ProgramValue {
+  fn from(item: DataValue) -> Self {
     match item {
-      Value::Real(x) => Self::Real(x),
-      Value::Label(l) => Self::Label(l),
+      DataValue::Real(x) => Self::Real(x),
+      DataValue::Label(l) => Self::Label(l),
     }
   }
 }
 impl From<RealValue> for ProgramValue {
   fn from(item: RealValue) -> Self {
     Self::Real(item)
+  }
+}
+impl From<Template> for ProgramValue {
+  fn from(item: Template) -> Self {
+    Self::Template(item)
   }
 }
 
@@ -73,4 +111,24 @@ pub enum TemplateValue{
   ParentStackMove(usize),
 //  ParentStackCopy(usize), // Maybe?
   Literal(ProgramValue),
+}
+impl From<DataValue> for TemplateValue {
+  fn from(item: DataValue) -> Self {
+    Self::Literal(item.into())
+  }
+}
+impl From<RealValue> for TemplateValue {
+  fn from(item: RealValue) -> Self {
+    Self::Literal(item.into())
+  }
+}
+impl From<ProgramValue> for TemplateValue {
+  fn from(item: ProgramValue) -> Self {
+    Self::Literal(item)
+  }
+}
+impl From<Template> for TemplateValue {
+  fn from(item: Template) -> Self {
+    Self::Literal(item.into())
+  }
 }
