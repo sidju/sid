@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+  Template,
   TemplateData,
   TemplateValue,
   DataValue,
@@ -9,17 +10,18 @@ use crate::{
 };
 
 pub fn render_template(
-  template: TemplateData,
-  mut consumed_stack: Vec<DataValue>,
+  template: Template,
+  parent_stack: &mut Vec<DataValue>,
   parent_scope: &HashMap<String, RealValue>,
   global_scope: &HashMap<String, RealValue>,
 ) -> Vec<DataValue> {
-  let mut consumed_stack: Vec<Option<DataValue>> = consumed_stack.drain(..)
+  let mut consumed_stack = parent_stack
+    .drain(parent_stack.len() - template.consumes_stack_entries ..)
     .map(|x| Some(x))
-    .collect()
+    .collect::<Vec<Option<DataValue>>>()
   ;
   use TemplateData as TD;
-  let rendered_template: RealValue = match template {
+  let rendered_template: RealValue = match template.data {
     TD::SubstackTemplate(source) => {
       let mut rendered: Vec<ProgramValue> = Vec::new();
       use TemplateValue as TV;
@@ -33,11 +35,17 @@ pub fn render_template(
           else if let Some(v) = global_scope.get(&l) {
             rendered.push(v.clone().into())
           }
-          else { panic!("Undefined label dereferenced"); }
+          else { panic!("Undefined label dereferenced: {}", l); }
         }
         TV::ParentStackMove(i) => {
-          let value = consumed_stack[i].take().expect("Stack value taken twice in template");
-          rendered.push(value.into()); 
+          if i == 0 {
+            panic!("Parent stack index 0 is the template!");
+          }
+          let value = consumed_stack[i - 1]
+            .take()
+            .expect("Stack value taken twice in template")
+          ;
+          rendered.push(value.into());
         },
       }}
       RealValue::Substack(rendered)

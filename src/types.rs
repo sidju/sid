@@ -66,8 +66,8 @@ pub enum ProgramValue{
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Template {
-  data: TemplateData,
-  consumes_stack_entries: usize,
+  pub data: TemplateData,
+  pub consumes_stack_entries: usize,
 }
 impl Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
