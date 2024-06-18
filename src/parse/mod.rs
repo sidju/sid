@@ -23,12 +23,12 @@ pub use parse_template::*;
 ///
 /// Operates on an iterator of grapheme clusters, returns the parsed stack
 /// template. (which can be first rendered and then invoked)
-pub fn parse_program_sequence<'a> (
-  iter: &mut Peekable<Graphemes>,
-  terminator: Option<&'a str>,
-) -> (Vec<TemplateValue>, usize) {
+pub fn parse_program_sequence<'a,'b,'c> (
+  iter: &'a mut Peekable<Graphemes>,
+  terminator: Option<&'b str>,
+) -> (Vec<TemplateValue<'c>>, usize) {
   // State for the interpreter
-  let mut parsed_program: Vec<TemplateValue> = Vec::new();
+  let mut parsed_program: Vec<TemplateValue<'c>> = Vec::new();
   let mut stack_entries_consumed = 0;
   loop {
     // Check for the terminator. If found we consume it, break and return

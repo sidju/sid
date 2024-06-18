@@ -9,12 +9,12 @@ use crate::{
   RealValue,
 };
 
-pub fn render_template(
-  template: Template,
-  parent_stack: &mut Vec<DataValue>,
-  parent_scope: &HashMap<String, RealValue>,
-  global_scope: &HashMap<String, RealValue>,
-) -> Vec<DataValue> {
+pub fn render_template<'a>(
+  template: Template<'a>,
+  parent_stack: &mut Vec<DataValue<'a>>,
+  parent_scope: &HashMap<String, RealValue<'a>>,
+  global_scope: &HashMap<String, RealValue<'a>>,
+) -> Vec<DataValue<'a>> {
   if template.consumes_stack_entries > parent_stack.len() {
     panic!("Template consumes more stack entries than there are.");
   }

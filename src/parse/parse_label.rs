@@ -8,9 +8,9 @@ use super::is_key_char;
 /// Parse out a label from the given char iterator.
 ///
 /// The first char should be the first char in the label.
-pub fn parse_label<'a>(
+pub fn parse_label<'a,'b>(
   input: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
-) -> DataValue {
+) -> DataValue<'b> {
   //let mut escaped = false;
   let mut data = String::new();
   loop {

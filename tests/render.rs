@@ -2,13 +2,13 @@ use sid::*;
 
 use std::collections::HashMap;
 
-pub fn render_test_fixture(
-  template: Template,
-  mut parent_stack: Vec<DataValue>,
-  parent_scope: HashMap<String, RealValue>,
-  global_scope: HashMap<String, RealValue>,
-  expected_parent_stack: Vec<DataValue>,
-  expected_rendered_stack: Vec<DataValue>,
+pub fn render_test_fixture<'a>(
+  template: Template<'a>,
+  mut parent_stack: Vec<DataValue<'a>>,
+  parent_scope: HashMap<String, RealValue<'a>>,
+  global_scope: HashMap<String, RealValue<'a>>,
+  expected_parent_stack: Vec<DataValue<'a>>,
+  expected_rendered_stack: Vec<DataValue<'a>>,
 ) {
   let rendered_stack = render_template(
     template,
