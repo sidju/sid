@@ -6,10 +6,8 @@ mod parse;
 pub use parse::*;
 mod render;
 pub use render::*;
-//pub mod invoke;
-//use invoke::{
-//  invoke,
-//};
+mod invoke;
+pub use invoke::*;
 //
 //
 //pub fn interpret_str(

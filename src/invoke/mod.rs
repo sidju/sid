@@ -1,112 +1,68 @@
-
-use super::{
-  Value,
-  RealValue,
-  Function,
-};
-
-pub mod side_effects;
-use side_effects::SideEffectFunction;
-
-pub fn resolve_label(
-  label: &str,
-) -> RealValue {
-  // First we match against built in functions
-  match label {
-    "print" => SideEffectFunction::Print.into(),
-    _ => panic!("Label not found"),
-  }
-}
-
-pub fn realize_value(
-  possibly_label: Value,
-) -> RealValue {
-  match possibly_label {
-    Value::Label(x) => resolve_label(&x),
-    Value::Real(x) => x,
-  }
-}
-
-pub fn invoke(
-  side_effector: &mut dyn side_effects::SideEffector,
-  stack: &mut Vec<Value>,
-) {
-  match stack.pop().map(realize_value) {
-    Some(RealValue::Fun(x)) => match x {
-      Function::SideEffect(y) => {
-        side_effector.invoke(y, stack)
-      }
-    }
-    x => panic!("Bad input to invoke: {:?}", x),
-  }
-}
-use std::error::Error;
 use std::collections::HashMap;
 
-// We create side-effects through a trait implementation
-// (This allows mocking all side effects in one for testing)
-mod parse;
-use parse::*;
-pub mod invoke;
-use invoke::{
-  invoke,
-  resolve_label,
-  realize_value,
-  side_effects::{
-    SideEffector,
-    SideEffectFunction,
-  },
-};
-
-mod types;
-pub use types::{
-  Value,
-  RealValue,
+use super::{
   ProgramValue,
-  Function,
-  Template,
-  TemplateValue,
+  RealValue,
+  DataValue,
+  render_template,
 };
 
-pub fn interpret<'a>(
-  mut program: Vec<ProgramValue>,
-  side_effector: &mut dyn SideEffector,
-  global_scope: HashMap<String, RealValue>,
-) -> Result<Vec<Value>, Box<dyn Error>> {
-  // Repeatedly pop the next program instruction off the program stack and
-  // interpret it
-  let mut data_stack: Vec<Value> = Vec::new();
-  use ProgramValue as PV;
-  for operation in program { match operation {
-    PV::Real(v) => { data_stack.push(Value::Real(v)); },
-    PV::Label(l) => { data_stack.push(Value::Label(l)); },
-    PV::Template{consumed_stack_entries, source} => {
-      if consumed_stack_entries > data_stack.len() {
-        panic!("Template consumes more stack entries than there are.");
-      }
-      let consumed_stack = data_stack.split_off(
-        data_stack.len() - consumed_stack_entries
-      );
-      data_stack.push(render_template(
-        consumed_stack,
-        &global_scope,
-        source,
-      ).into());
+
+// Invoking behaves very differently depending on what is invoked
+pub fn invoke(
+  data_stack: &mut Vec<DataValue>,
+  program_stack: &mut Vec<ProgramValue>,
+  parent_scope: &HashMap<String, RealValue>,
+  global_scope: &HashMap<String, RealValue>,
+) {
+  match match data_stack.pop() {
+    Some(DataValue::Real(v)) => v,
+    Some(DataValue::Label(l)) => {
+      if let Some(v) = parent_scope.get(&l) { v.clone() }
+      else if let Some(v) = global_scope.get(&l) { v.clone() }
+      else { panic!("Undefined label dereference: {}", l); }
     },
-    PV::Invoke => { invoke(side_effector, &mut data_stack); },
+    None => panic!("Invoked on empty data_stack!"),
+  } {
+    // Invoking a substack puts it on your program_stack and resumes execution
+    RealValue::Substack(mut s) => {
+      program_stack.append(&mut s);
+    },
+
+    // TODO
+    // Invoking a function interprets the function on your data_stack and
+    // global_scope, but with its own local_scope.
+
+    // Invoking a built-in function might do anything
+    _ => panic!("Invalid object invoked.")
+  }
+}
+
+// Repeatedly pop and interpret each value from the program stack
+pub fn interpret(
+  mut program: Vec<ProgramValue>,
+  data_stack: &mut Vec<DataValue>,
+  global_scope: HashMap<String, RealValue>,
+) {
+  let local_scope = HashMap::new();
+  use ProgramValue as PV;
+  while let Some(operation) = program.pop() { match operation {
+    PV::Real(v) => { data_stack.push(DataValue::Real(v)); },
+    PV::Label(l) => { data_stack.push(DataValue::Label(l)); },
+    PV::Template(t) => {
+      let mut rendered = render_template(
+        t,
+        data_stack,
+        &local_scope,
+        &global_scope,
+      );
+      data_stack.append(&mut rendered);
+    },
+    PV::Invoke => { invoke(
+      data_stack,
+      &mut program,
+      &global_scope,
+      &local_scope,
+    ); },
   } }
-  Ok(data_stack)
 }
-
-pub fn interpret_str(
-  script: &str,
-  side_effector: &mut dyn SideEffector,
-) -> Result<Vec<Value>, Box<dyn Error>> {
-  let mut scope = HashMap::new();
-  interpret(
-    parse_str(script),
-    side_effector,
-    scope,
-  )
-}
-

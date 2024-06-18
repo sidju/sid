@@ -15,6 +15,9 @@ pub fn render_template(
   parent_scope: &HashMap<String, RealValue>,
   global_scope: &HashMap<String, RealValue>,
 ) -> Vec<DataValue> {
+  if template.consumes_stack_entries > parent_stack.len() {
+    panic!("Template consumes more stack entries than there are.");
+  }
   let mut consumed_stack = parent_stack
     .drain(parent_stack.len() - template.consumes_stack_entries ..)
     .map(|x| Some(x))
