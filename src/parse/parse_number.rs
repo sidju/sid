@@ -1,8 +1,8 @@
 use super::*;
 
-pub fn parse_number<'a>(
+pub fn parse_number(
   input: &mut Peekable<Graphemes>,
-) -> RealValue<'a> {
+) -> RealValue {
   let mut float = false;
   let mut agg = String::new();
   loop { if let Some(ch) = input.peek() {

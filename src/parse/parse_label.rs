@@ -3,14 +3,18 @@ use crate::{
   RealValue,
 };
 
-use super::is_key_char;
+use super::{
+  Peekable,
+  Graphemes,
+  is_key_char,
+};
 
 /// Parse out a label from the given char iterator.
 ///
 /// The first char should be the first char in the label.
-pub fn parse_label<'a,'b>(
-  input: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
-) -> DataValue<'b> {
+pub fn parse_label(
+  input: &mut Peekable<Graphemes>,
+) -> DataValue {
   //let mut escaped = false;
   let mut data = String::new();
   loop {

@@ -4,6 +4,7 @@ use super::{
   ProgramValue,
   RealValue,
   DataValue,
+  BuiltInFunction,
   render_template,
 };
 
@@ -12,10 +13,11 @@ pub mod built_in;
 
 // Invoking behaves very differently depending on what is invoked
 pub fn invoke<'a>(
-  data_stack: &mut Vec<DataValue<'a>>,
-  program_stack: &mut Vec<ProgramValue<'a>>,
-  local_scope: &mut HashMap<String, RealValue<'a>>,
-  global_scope: &mut HashMap<String, RealValue<'a>>,
+  data_stack: &mut Vec<DataValue>,
+  program_stack: &mut Vec<ProgramValue>,
+  local_scope: &mut HashMap<String, RealValue>,
+  global_scope: &mut HashMap<String, RealValue>,
+  built_in_functions: &HashMap<&'a str, &'a dyn BuiltInFunction>,
 ) {
   match match data_stack.pop() {
     Some(DataValue::Real(v)) => v,
@@ -39,7 +41,7 @@ pub fn invoke<'a>(
     // Invoking a built-in function might do anything, but usually acts like a
     // normal function
     RealValue::BuiltInFunction(function) => {
-      function.execute(
+      built_in_functions[&function[..]].execute(
         data_stack,
         program_stack,
         local_scope,
@@ -52,9 +54,10 @@ pub fn invoke<'a>(
 
 // Repeatedly pop and interpret each value from the program stack
 pub fn interpret<'a>(
-  mut program: Vec<ProgramValue<'a>>,
-  data_stack: &mut Vec<DataValue<'a>>,
-  mut global_scope: HashMap<String, RealValue<'a>>,
+  mut program: Vec<ProgramValue>,
+  data_stack: &mut Vec<DataValue>,
+  mut global_scope: HashMap<String, RealValue>,
+  built_in_functions: &HashMap<&'a str, &'a dyn BuiltInFunction>,
 ) {
   let mut local_scope = HashMap::new();
   use ProgramValue as PV;
@@ -73,8 +76,9 @@ pub fn interpret<'a>(
     PV::Invoke => { invoke(
       data_stack,
       &mut program,
-      &mut global_scope,
       &mut local_scope,
+      &mut global_scope,
+      built_in_functions,
     ); },
   } }
 }

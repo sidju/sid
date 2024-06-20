@@ -1,8 +1,8 @@
 use super::*;
 
-pub fn parse_parent_access<'a>(
+pub fn parse_parent_access(
   source_iter: &mut Peekable<Graphemes>,
-) -> TemplateValue<'a> {
+) -> TemplateValue {
   assert_eq!(
     source_iter.next(),
     Some("$"),
@@ -28,9 +28,9 @@ pub fn parse_parent_access<'a>(
   }
 }
 
-pub fn parse_template<'a>(
+pub fn parse_template(
   source_iter: &mut Peekable<Graphemes>,
-) -> Template<'a> {
+) -> Template {
   if let Some(val) = source_iter.next() { match val {
     "(" => {
       return Template::substack(parse_program_sequence(

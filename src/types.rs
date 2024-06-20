@@ -31,69 +31,52 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 pub trait BuiltInFunction: Debug {
-  fn execute<'a>(&self,
-    data_stack: &mut Vec<DataValue<'a>>,
-    program_stack: &mut Vec<ProgramValue<'a>>,
-    local_scope: &mut HashMap<String, RealValue<'a>>,
-    global_scope: &mut HashMap<String, RealValue<'a>>,
+  fn execute(&self,
+    data_stack: &mut Vec<DataValue>,
+    program_stack: &mut Vec<ProgramValue>,
+    local_scope: &mut HashMap<String, RealValue>,
+    global_scope: &mut HashMap<String, RealValue>,
   );
 }
 
-pub trait BuiltInFunctionWithPartialEquals: BuiltInFunction + PartialEq {}
-
-#[derive(Debug, Clone)]
-pub enum RealValue<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum RealValue {
   Bool(bool),
   Str(String),
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
-  Substack(Vec<ProgramValue<'a>>),
-  BuiltInFunction(&'a dyn BuiltInFunction),
-}
-// Manual implementation, since we cannot compare dyn BuiltInFunction without
-// knowing its type and thus need to always return false for that
-impl <'a> PartialEq for RealValue<'a> {
-  fn eq(&self, other: &Self) -> bool {
-    match (self, other) {
-      (Self::Bool(x), Self::Bool(y)) if x == y => true,
-      (Self::Str(x), Self::Str(y)) if x == y => true,
-      (Self::Char(x), Self::Char(y)) if x == y => true,
-      (Self::Int(x), Self::Int(y)) if x == y => true,
-      (Self::Float(x), Self::Float(y)) if x == y => true,
-      (Self::Substack(x), Self::Substack(y)) if x == y => true,
-      _ => false 
-    }
-  }
+  Substack(Vec<ProgramValue>),
+  BuiltInFunction(String),
 }
 
 #[derive(PartialEq, Debug)]
-pub enum DataValue<'a> {
-  Real(RealValue<'a>),
+pub enum DataValue {
+  Real(RealValue),
   Label(String),
 }
-impl <'a> From<RealValue<'a>> for DataValue<'a> {
-  fn from(item: RealValue<'a>) -> Self {
+impl  From<RealValue> for DataValue {
+  fn from(item: RealValue) -> Self {
     Self::Real(item)
   }
 }
 
 // The values of the program as they look after parsing (before execution)
 #[derive(PartialEq, Debug, Clone)]
-pub enum ProgramValue<'a>{
-  Real(RealValue<'a>),
+pub enum ProgramValue{
+  Real(RealValue),
   Label(String),
   Invoke,
-  Template(Template<'a>),
+  Template(Template),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Template<'a> {
-  pub data: TemplateData<'a>,
+pub struct Template {
+  pub data: TemplateData,
   pub consumes_stack_entries: usize,
 }
-impl <'a> Template<'a> {
-  pub fn substack(parsed: (Vec<TemplateValue<'a>>, usize)) -> Self {
+impl  Template {
+  pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
     Self{
       data: TemplateData::SubstackTemplate(parsed.0),
       consumes_stack_entries: parsed.1,
@@ -102,56 +85,56 @@ impl <'a> Template<'a> {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum TemplateData<'a> {
-  SubstackTemplate(Vec<TemplateValue<'a>>),
+pub enum TemplateData {
+  SubstackTemplate(Vec<TemplateValue>),
 //  ScriptTemplate,
 //  StructTemplate,
 //  ListTemplate,
 //  SetTemplate,
 }
-impl <'a> From<DataValue<'a>> for ProgramValue<'a> {
-  fn from(item: DataValue<'a>) -> Self {
+impl  From<DataValue> for ProgramValue {
+  fn from(item: DataValue) -> Self {
     match item {
       DataValue::Real(x) => Self::Real(x),
       DataValue::Label(l) => Self::Label(l),
     }
   }
 }
-impl <'a> From<RealValue<'a>> for ProgramValue<'a> {
-  fn from(item: RealValue<'a>) -> Self {
+impl  From<RealValue> for ProgramValue {
+  fn from(item: RealValue) -> Self {
     Self::Real(item)
   }
 }
-impl <'a> From<Template<'a>> for ProgramValue<'a> {
-  fn from(item: Template<'a>) -> Self {
+impl  From<Template> for ProgramValue {
+  fn from(item: Template) -> Self {
     Self::Template(item)
   }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum TemplateValue<'a>{
+pub enum TemplateValue{
   ParentLabel(String),
   ParentStackMove(usize),
 //  ParentStackCopy(usize), // Maybe?
-  Literal(ProgramValue<'a>),
+  Literal(ProgramValue),
 }
-impl <'a> From<DataValue<'a>> for TemplateValue<'a> {
-  fn from(item: DataValue<'a>) -> Self {
+impl  From<DataValue> for TemplateValue {
+  fn from(item: DataValue) -> Self {
     Self::Literal(item.into())
   }
 }
-impl <'a> From<RealValue<'a>> for TemplateValue<'a> {
-  fn from(item: RealValue<'a>) -> Self {
+impl  From<RealValue> for TemplateValue {
+  fn from(item: RealValue) -> Self {
     Self::Literal(item.into())
   }
 }
-impl <'a> From<ProgramValue<'a>> for TemplateValue<'a> {
-  fn from(item: ProgramValue<'a>) -> Self {
+impl  From<ProgramValue> for TemplateValue {
+  fn from(item: ProgramValue) -> Self {
     Self::Literal(item)
   }
 }
-impl <'a> From<Template<'a>> for TemplateValue<'a> {
-  fn from(item: Template<'a>) -> Self {
+impl  From<Template> for TemplateValue {
+  fn from(item: Template) -> Self {
     Self::Literal(item.into())
   }
 }
