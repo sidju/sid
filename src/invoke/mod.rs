@@ -8,8 +8,6 @@ use super::{
   render_template,
 };
 
-pub mod built_in;
-
 
 // Invoking behaves very differently depending on what is invoked
 pub fn invoke<'a>(
