@@ -26,9 +26,9 @@ pub use parse_template::*;
 pub fn parse_program_sequence<'a,'b> (
   iter: &'a mut Peekable<Graphemes>,
   terminator: Option<&'b str>,
-) -> (Vec<TemplateValue>, usize) {
+) -> (Vec<ProgramTemplateValue>, usize) {
   // State for the interpreter
-  let mut parsed_program: Vec<TemplateValue> = Vec::new();
+  let mut parsed_program: Vec<ProgramTemplateValue> = Vec::new();
   let mut stack_entries_consumed = 0;
   loop {
     // Check for the terminator. If found we consume it, break and return
@@ -55,9 +55,9 @@ pub fn parse_program_sequence<'a,'b> (
       "$" => match parse_parent_access(iter) {
         TemplateValue::ParentStackMove(i) => {
           stack_entries_consumed = stack_entries_consumed.max(i); 
-          parsed_program.push(TemplateValue::ParentStackMove(i));
+          parsed_program.push(TemplateValue::ParentStackMove(i).into());
         },
-        x => parsed_program.push(x),
+        x => parsed_program.push(x.into()),
       },
       // Parse number if first char is a digit or minus (start of signed number)
       x if x.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) => {
@@ -76,7 +76,7 @@ pub fn parse_program_sequence<'a,'b> (
 
 pub fn parse_str(
   script: &str,
-) -> (Vec<TemplateValue>, usize) {
+) -> (Vec<ProgramTemplateValue>, usize) {
   parse_program_sequence(
     &mut script.graphemes(true).peekable(),
     None,

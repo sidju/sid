@@ -50,7 +50,7 @@ pub enum RealValue {
   BuiltInFunction(String),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum DataValue {
   Real(RealValue),
   Label(String),
@@ -76,7 +76,7 @@ pub struct Template {
   pub consumes_stack_entries: usize,
 }
 impl  Template {
-  pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
+  pub fn substack(parsed: (Vec<ProgramTemplateValue>, usize)) -> Self {
     Self{
       data: TemplateData::SubstackTemplate(parsed.0),
       consumes_stack_entries: parsed.1,
@@ -86,7 +86,7 @@ impl  Template {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum TemplateData {
-  SubstackTemplate(Vec<TemplateValue>),
+  SubstackTemplate(Vec<ProgramTemplateValue>),
 //  ScriptTemplate,
 //  StructTemplate,
 //  ListTemplate,
@@ -112,29 +112,59 @@ impl  From<Template> for ProgramValue {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum TemplateValue{
+pub enum TemplateValue {
   ParentLabel(String),
   ParentStackMove(usize),
-//  ParentStackCopy(usize), // Maybe?
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum ProgramTemplateValue{
+  Template(TemplateValue),
   Literal(ProgramValue),
 }
-impl  From<DataValue> for TemplateValue {
+impl  From<DataValue> for ProgramTemplateValue {
   fn from(item: DataValue) -> Self {
     Self::Literal(item.into())
   }
 }
-impl  From<RealValue> for TemplateValue {
+impl  From<RealValue> for ProgramTemplateValue {
   fn from(item: RealValue) -> Self {
     Self::Literal(item.into())
   }
 }
-impl  From<ProgramValue> for TemplateValue {
+impl  From<ProgramValue> for ProgramTemplateValue {
   fn from(item: ProgramValue) -> Self {
     Self::Literal(item)
   }
 }
-impl  From<Template> for TemplateValue {
+impl  From<Template> for ProgramTemplateValue {
   fn from(item: Template) -> Self {
     Self::Literal(item.into())
+  }
+}
+impl From<TemplateValue> for ProgramTemplateValue {
+  fn from(item: TemplateValue) -> Self {
+    Self::Template(item)
+  }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum DataTemplateValue{
+  Template(TemplateValue),
+  Literal(DataValue),
+}
+impl  From<DataValue> for DataTemplateValue {
+  fn from(item: DataValue) -> Self {
+    Self::Literal(item.into())
+  }
+}
+impl  From<RealValue> for DataTemplateValue {
+  fn from(item: RealValue) -> Self {
+    Self::Literal(item.into())
+  }
+}
+impl From<TemplateValue> for DataTemplateValue {
+  fn from(item: TemplateValue) -> Self {
+    Self::Template(item)
   }
 }

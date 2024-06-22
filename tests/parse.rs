@@ -2,7 +2,7 @@ use sid::*;
 
 pub fn parse_test_fixture(
   input: &str,
-  expected_output_template: Vec<TemplateValue>,
+  expected_output_template: Vec<ProgramTemplateValue>,
   expected_output_stack_entries_consumed: usize,
 ) {
   let output = parse_str(
@@ -97,7 +97,7 @@ fn parse_with_stack_template() {
   parse_test_fixture(
     "$3",
     vec![
-      TemplateValue::ParentStackMove(3),
+      TemplateValue::ParentStackMove(3).into(),
     ],
     3
   )
@@ -108,7 +108,7 @@ fn parse_with_parent_label() {
   parse_test_fixture(
     "$label_name",
     vec![
-      TemplateValue::ParentLabel("label_name".to_owned()),
+      TemplateValue::ParentLabel("label_name".to_owned()).into(),
     ],
     0
   )
@@ -123,7 +123,7 @@ fn parse_substack() {
         vec![
           RealValue::Str("data".to_owned()).into(),
           RealValue::Int(5).into(),
-          TemplateValue::ParentStackMove(1),
+          TemplateValue::ParentStackMove(1).into(),
         ],
         1
       )).into(),
