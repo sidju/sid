@@ -4,8 +4,6 @@ use crate::{
   Template,
   TemplateData,
   TemplateValue,
-  DataTemplateValue,
-  ProgramTemplateValue,
   DataValue,
   ProgramValue,
   RealValue,
@@ -29,11 +27,10 @@ pub fn render_template(
   let rendered_template: RealValue = match template.data {
     TD::SubstackTemplate(source) => {
       let mut rendered: Vec<ProgramValue> = Vec::new();
-      use ProgramTemplateValue as PTV;
       use TemplateValue as TV;
       for entry in source { match entry {
-        PTV::Literal(v) => { rendered.push(v); },
-        PTV::Template(TV::ParentLabel(l)) => {
+        TV::Literal(v) => { rendered.push(v); },
+        TV::ParentLabel(l) => {
           // Get the value from scope maps. Try parent before global
           if let Some(v) = parent_scope.get(&l) {
             rendered.push(v.clone().into())
@@ -43,7 +40,7 @@ pub fn render_template(
           }
           else { panic!("Undefined label dereferenced: {}", l); }
         }
-        PTV::Template(TV::ParentStackMove(i)) => {
+        TV::ParentStackMove(i) => {
           if i == 0 {
             panic!("Parent stack index 0 is the template!");
           }

@@ -65,8 +65,8 @@ fn render_substack() {
     // Template
     Template::substack((
       vec![
-        TemplateValue::ParentStackMove(1).into(),
-        TemplateValue::ParentLabel("one".to_string()).into(),
+        TemplateValue::ParentStackMove(1),
+        TemplateValue::ParentLabel("one".to_string()),
         DataValue::Label("add".to_string()).into(),
         ProgramValue::Invoke.into(),
       ],
