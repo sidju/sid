@@ -47,10 +47,11 @@ pub enum RealValue {
   Int(i64),
   Float(f64),
   Substack(Vec<ProgramValue>),
+  List(Vec<DataValue>),
   BuiltInFunction(String),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum DataValue {
   Real(RealValue),
   Label(String),
@@ -82,11 +83,18 @@ impl  Template {
       consumes_stack_entries: parsed.1,
     }
   }
+  pub fn list(parsed: (Vec<TemplateValue>, usize)) -> Self {
+    Self{
+      data: TemplateData::ListTemplate(parsed.0),
+      consumes_stack_entries: parsed.1,
+    }
+  }
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum TemplateData {
   SubstackTemplate(Vec<TemplateValue>),
+  ListTemplate(Vec<TemplateValue>),
 //  ScriptTemplate,
 //  StructTemplate,
 //  ListTemplate,

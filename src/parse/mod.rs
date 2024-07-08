@@ -87,7 +87,7 @@ fn is_key_char(
   ch: &str,
 ) -> bool {
   match ch {
-    " " | "!" | ")" | "\"" | "'" => true,
+    " " | "!" | ")" | "\"" | "'" | "]" => true,
     _ => false,
   }
 }

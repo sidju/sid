@@ -133,6 +133,24 @@ fn parse_substack() {
 }
 
 #[test]
+fn parse_list() {
+  parse_test_fixture(
+    "[\"data\" 5 $1]",
+    vec![
+      Template::list((
+        vec![
+          RealValue::Str("data".to_owned()).into(),
+          RealValue::Int(5).into(),
+          TemplateValue::ParentStackMove(1),
+        ],
+        1
+      )).into(),
+    ],
+    0
+  )
+}
+
+#[test]
 fn parse_invoke() {
   parse_test_fixture(
     "(5)!",

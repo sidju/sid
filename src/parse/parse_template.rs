@@ -38,6 +38,12 @@ pub fn parse_template(
         Some(")"),
       ));
     },
+    "[" => {
+      return Template::list(parse_program_sequence(
+        source_iter,
+        Some("]"),
+      ));
+    },
     _ => panic!("Invalid template initiator, {}", val),
   } }
   else {

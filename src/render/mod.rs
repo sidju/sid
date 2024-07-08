@@ -53,6 +53,9 @@ pub fn render_template(
       }}
       RealValue::Substack(rendered)
     },
+    TD::ListTemplate(source) => {
+      todo!()
+    },
   };
   let mut rendered_stack: Vec<DataValue> = consumed_stack.drain(..)
     .filter_map(|x| x)
