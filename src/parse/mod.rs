@@ -42,10 +42,7 @@ pub fn parse_program_sequence<'a,'b> (
       // Whitespace generally has no significance, but sometimes the sub-parsers
       // may use it to identify the end of their input
       // (We need to take next to not invoke infinitely)
-      " " | "\n" | "\t" => { iter.next(); },
-
-      // Is this right? perhaps it's just the fizzbuzz example using it
-      "," => { iter.next(); },
+      " " | "\n" | "\t" | "," => { iter.next(); },
       // Value literals
       "\"" => parsed_program.push(RealValue::Str(parse_string(iter).unwrap()).into()),
       "'" => parsed_program.push(RealValue::Char(parse_char(iter)).into()),
@@ -92,8 +89,9 @@ fn is_key_char(
   ch: &str,
 ) -> bool {
   match ch {
-    " " | "\n" | "\t" | "!" | ")" | "]" | "}" | "\"" | "'" | "#" => true,
-    "," => true,
+    " " | "\n" | "\t" | "," => true,
+    "!" | "#" => true,
+    ")" | "]" | "}" => true,
     _ => false,
   }
 }
