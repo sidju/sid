@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use sid::*;
 
 use clap::Parser;
@@ -10,9 +12,12 @@ struct CliArgs {
 }
 fn main() {
   let cli = CliArgs::parse();
-  // Create a iterator over the file
-  // Parse that iterator into Vec<TemplateValue>
-  let parsed = parse_program_sequence(iter, None);
+  // Create a String from the file
+  let file_content = std::fs::read_to_string(cli.file.clone())
+    .expect("Failed to read file");
+
+  // Parse that String into Vec<TemplateValue>
+  let parsed = parse_str(&file_content);
   // Create the global scope, with built-in functions and constants
   // (Implementations of this don't yet exist)
   let mut global_scope = HashMap::new();
@@ -20,8 +25,8 @@ fn main() {
   // Render that Vec<TemplateValue> as a Substack
   let rendered = render_template(
     Template::substack(parsed),
-    Vec::new(), // Current stack, not applicable
-    HashMap::new(), // Current local scope, not applicable
+    &mut Vec::new(), // Current stack, not applicable
+    &mut HashMap::new(), // Current local scope, not applicable
     &global_scope,
   );
   // The rendering output is the whole data stack initially
@@ -33,5 +38,6 @@ fn main() {
     &mut data_stack,
     global_scope,
     &built_in_functions,
-  )
+  );
+  println!("{:?}", data_stack);
 }

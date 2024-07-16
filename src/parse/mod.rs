@@ -37,10 +37,15 @@ pub fn parse_program_sequence<'a,'b> (
       break;
     }
     if let Some(val) = iter.peek() { match *val {
+      // Anything written after an # is a comment and should be ignored
+      "#" => { while iter.next().unwrap_or("\n") != "\n" {} }
       // Whitespace generally has no significance, but sometimes the sub-parsers
       // may use it to identify the end of their input
       // (We need to take next to not invoke infinitely)
-      " " => { iter.next(); },
+      " " | "\n" | "\t" => { iter.next(); },
+
+      // Is this right? perhaps it's just the fizzbuzz example using it
+      "," => { iter.next(); },
       // Value literals
       "\"" => parsed_program.push(RealValue::Str(parse_string(iter).unwrap()).into()),
       "'" => parsed_program.push(RealValue::Char(parse_char(iter)).into()),
@@ -87,7 +92,8 @@ fn is_key_char(
   ch: &str,
 ) -> bool {
   match ch {
-    " " | "!" | ")" | "\"" | "'" | "]" => true,
+    " " | "\n" | "\t" | "!" | ")" | "]" | "}" | "\"" | "'" | "#" => true,
+    "," => true,
     _ => false,
   }
 }
