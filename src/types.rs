@@ -27,13 +27,13 @@
 /// The allowed types are a structure of data lifecycle, not a restriction on
 /// what is possible.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
 pub trait BuiltInFunction: Debug {
   fn execute(&self,
     data_stack: &mut Vec<DataValue>,
-    program_stack: &mut Vec<ProgramValue>,
+    program_queue: &mut VecDeque<ProgramValue>,
     local_scope: &mut HashMap<String, RealValue>,
     global_scope: &mut HashMap<String, RealValue>,
   );
