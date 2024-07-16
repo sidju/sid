@@ -47,9 +47,9 @@ fn parse_char() {
 #[test]
 fn parse_label() {
   parse_test_fixture(
-    "Hello world",
+    "Hello, world",
     vec![
-      DataValue::Label("Hello,".to_owned()).into(),
+      DataValue::Label("Hello".to_owned()).into(),
       DataValue::Label("world".to_owned()).into(),
     ],
     0
