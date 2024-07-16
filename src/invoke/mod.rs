@@ -17,7 +17,7 @@ pub fn invoke<'a>(
   global_scope: &mut HashMap<String, RealValue>,
   built_in_functions: &HashMap<&'a str, &'a dyn BuiltInFunction>,
 ) {
-  match match data_stack.pop() {
+  let value = match data_stack.pop() {
     Some(DataValue::Real(v)) => v,
     Some(DataValue::Label(l)) => {
       if let Some(v) = local_scope.get(&l) { v.clone() }
@@ -25,7 +25,8 @@ pub fn invoke<'a>(
       else { panic!("Undefined label dereference: {}", l); }
     },
     None => panic!("Invoked on empty data_stack!"),
-  } {
+  };
+  match value {
     // Invoking a substack puts it on your program_stack and resumes execution
     // (This means it executes in current context / has access to local scope)
     RealValue::Substack(mut s) => {
@@ -59,24 +60,26 @@ pub fn interpret<'a>(
 ) {
   let mut local_scope = HashMap::new();
   use ProgramValue as PV;
-  while let Some(operation) = program.pop() { match operation {
-    PV::Real(v) => { data_stack.push(DataValue::Real(v)); },
-    PV::Label(l) => { data_stack.push(DataValue::Label(l)); },
-    PV::Template(t) => {
-      let mut rendered = render_template(
-        t,
+  while let Some(operation) = program.pop() { 
+    match operation {
+      PV::Real(v) => { data_stack.push(DataValue::Real(v)); },
+      PV::Label(l) => { data_stack.push(DataValue::Label(l)); },
+      PV::Template(t) => {
+        let mut rendered = render_template(
+          t,
+          data_stack,
+          &local_scope,
+          &global_scope,
+        );
+        data_stack.append(&mut rendered);
+      },
+      PV::Invoke => { invoke(
         data_stack,
-        &local_scope,
-        &global_scope,
-      );
-      data_stack.append(&mut rendered);
-    },
-    PV::Invoke => { invoke(
-      data_stack,
-      &mut program,
-      &mut local_scope,
-      &mut global_scope,
-      built_in_functions,
-    ); },
-  } }
+        &mut program,
+        &mut local_scope,
+        &mut global_scope,
+        built_in_functions,
+      ); },
+    } 
+  }
 }

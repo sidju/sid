@@ -10,7 +10,7 @@ pub fn parse_parent_access(
   );
   let mut numeric = true;
   let mut agg = String::new();
-  loop { if let Some(ch) = source_iter.peek() {
+  while let Some(ch) = source_iter.peek() {
     // If this character is a key part of the syntax that has priority
     if is_key_char(*ch) { break; }
     // Otherwise check if it's numeric
@@ -20,7 +20,7 @@ pub fn parse_parent_access(
     agg.push_str(ch);
     // Progress the iterator last, to correctly progress the parsing 
     source_iter.next();
-  } else { break; } }
+  }
   return if numeric {
     TemplateValue::ParentStackMove(agg.parse().unwrap())
   } else {
@@ -44,6 +44,7 @@ pub fn parse_template(
         Some("]"),
       ));
     },
+    "{" => { return Template::substack(parse_program_sequence(source_iter, Some("}"))); },  // TODO Make correct type
     _ => panic!("Invalid template initiator, {}", val),
   } }
   else {
