@@ -22,6 +22,7 @@ pub fn invoke<'a>(
     Some(DataValue::Label(l)) => {
       if let Some(v) = local_scope.get(&l) { v.clone() }
       else if let Some(v) = global_scope.get(&l) { v.clone() }
+      else if built_in_functions.contains_key(&l.as_str()) { RealValue::BuiltInFunction(l) }
       else { panic!("Undefined label dereference: {}", l); }
     },
     None => panic!("Invoked on empty data_stack!"),
