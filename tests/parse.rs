@@ -47,7 +47,7 @@ fn parse_char() {
 #[test]
 fn parse_label() {
   parse_test_fixture(
-    "Hello, world",
+    "Hello world",
     vec![
       DataValue::Label("Hello,".to_owned()).into(),
       DataValue::Label("world".to_owned()).into(),
@@ -162,6 +162,19 @@ fn parse_invoke() {
         0
       )).into(),
       ProgramValue::Invoke.into(),
+    ],
+    0
+  )
+}
+
+
+#[test]
+fn parse_comments() {
+  parse_test_fixture(
+    "\"hi\" #not\n \"there\"\n#more comments",
+    vec![
+      RealValue::Str("hi".to_owned()).into(),
+      RealValue::Str("there".to_owned()).into(),
     ],
     0
   )
