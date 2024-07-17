@@ -69,8 +69,8 @@ impl ToSyntax for TemplateData {
 impl ToSyntax for TemplateValue {
   fn to_syntax(&self) -> String {
       match self {
-        TemplateValue::ParentLabel(v) => format!("{} #Parent Label", v),
-        TemplateValue::ParentStackMove(v) => format!("sm {}", v), // Not super sure what this is
+        TemplateValue::ParentLabel(v) => format!("${}", v),
+        TemplateValue::ParentStackMove(v) => format!("${}", v),
         TemplateValue::Literal(v) => v.to_syntax(),
       }
   }
