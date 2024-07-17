@@ -2,12 +2,16 @@
 // (This allows mocking all side effects in one for testing)
 mod types;
 pub use types::*;
+mod to_syntax;
+pub use to_syntax::*;
 mod parse;
 pub use parse::*;
 mod render;
 pub use render::*;
 mod invoke;
 pub use invoke::*;
+mod built_in;
+pub use built_in::*;
 //
 //
 //pub fn interpret_str(
