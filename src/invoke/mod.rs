@@ -55,33 +55,57 @@ pub fn invoke<'a>(
 
 // Repeatedly pop and interpret each value from the program stack
 pub fn interpret<'a>(
-  mut program: Vec<ProgramValue>,
-  data_stack: &mut Vec<DataValue>,
-  mut global_scope: HashMap<String, RealValue>,
+  program: Vec<ProgramValue>,
+  data_stack: Vec<DataValue>,
+  global_scope: HashMap<String, RealValue>,
   built_in_functions: &HashMap<&'a str, &'a dyn BuiltInFunction>,
 ) {
-  let mut local_scope = HashMap::new();
+  let local_scope = HashMap::new();
+  let mut exe_state = ExeState {
+    program_stack: program,
+    data_stack,
+    local_scope,
+    global_scope,
+  };
+  while !exe_state.program_stack.is_empty() {   
+    interpret_one(
+      &mut exe_state,
+      built_in_functions)
+  }
+}
+
+
+pub struct ExeState {
+  pub program_stack: Vec<ProgramValue>,
+  pub data_stack: Vec<DataValue>,
+  pub local_scope: HashMap<String, RealValue>,
+  pub global_scope: HashMap<String, RealValue>,
+}
+
+pub fn interpret_one<'a>(
+  exe_state: &mut ExeState,
+  built_in_functions: &HashMap<&'a str, &'a dyn BuiltInFunction>,
+) {
   use ProgramValue as PV;
-  while let Some(operation) = program.pop() { 
-    match operation {
-      PV::Real(v) => { data_stack.push(DataValue::Real(v)); },
-      PV::Label(l) => { data_stack.push(DataValue::Label(l)); },
-      PV::Template(t) => {
-        let mut rendered = render_template(
-          t,
-          data_stack,
-          &local_scope,
-          &global_scope,
-        );
-        data_stack.append(&mut rendered);
-      },
-      PV::Invoke => { invoke(
-        data_stack,
-        &mut program,
-        &mut local_scope,
-        &mut global_scope,
-        built_in_functions,
-      ); },
-    } 
+  let operation = exe_state.program_stack.pop().unwrap();
+  match operation {
+    PV::Real(v) => { exe_state.data_stack.push(DataValue::Real(v)); },
+    PV::Label(l) => { exe_state.data_stack.push(DataValue::Label(l)); },
+    PV::Template(t) => {
+      let mut rendered = render_template(
+        t,
+        &mut exe_state.data_stack,
+        &exe_state.local_scope,
+        &exe_state.global_scope,
+      );
+      exe_state.data_stack.append(&mut rendered);
+    },
+    PV::Invoke => { invoke(
+      &mut exe_state.data_stack,
+      &mut exe_state.program_stack,
+      &mut exe_state.local_scope,
+      &mut exe_state.global_scope,
+      built_in_functions,
+    ); },
   }
 }
