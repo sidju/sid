@@ -31,10 +31,10 @@ fn main() {
   );
   // The rendering output is the whole data stack initially
   // And an invoke the whole program
-  let program_queue = vec![ProgramValue::Invoke].into();
+  let program_stack = vec![ProgramValue::Invoke];
   let mut data_stack = rendered;
   interpret(
-    program_queue,
+    program_stack,
     &mut data_stack,
     global_scope,
     &built_in_functions,
