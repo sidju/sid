@@ -8,6 +8,12 @@ use super::{
   render_template,
 };
 
+pub struct ExeState {
+  pub program_stack: Vec<ProgramValue>,
+  pub data_stack: Vec<DataValue>,
+  pub local_scope: HashMap<String, RealValue>,
+  pub global_scope: HashMap<String, RealValue>,
+}
 
 // Invoking behaves very differently depending on what is invoked
 pub fn invoke<'a>(
@@ -75,12 +81,6 @@ pub fn interpret<'a>(
 }
 
 
-pub struct ExeState {
-  pub program_stack: Vec<ProgramValue>,
-  pub data_stack: Vec<DataValue>,
-  pub local_scope: HashMap<String, RealValue>,
-  pub global_scope: HashMap<String, RealValue>,
-}
 
 pub fn interpret_one<'a>(
   exe_state: &mut ExeState,

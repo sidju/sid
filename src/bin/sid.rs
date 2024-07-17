@@ -7,6 +7,11 @@ use clap::Parser;
 #[cfg(feature= "debug-gui")]
 mod debug_gui;
 
+struct Program {
+  instructions: Vec<DataValue>,
+  global_scope: HashMap<String, RealValue>,
+}
+
 #[derive(Parser)]
 #[command(version)]
 struct CliArgs {
@@ -65,11 +70,6 @@ fn run_file(path: &str) {
   let file_content = std::fs::read_to_string(path)
     .expect("Failed to read file");
   run(&file_content);
-}
-
-struct Program {
-  instructions: Vec<DataValue>,
-  global_scope: HashMap<String, RealValue>,
 }
 
 fn compile(source: & str) -> Program {
