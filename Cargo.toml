@@ -3,14 +3,6 @@ name = "sid"
 version = "0.1.0"
 edition = "2021"
 
-#[[bin]]
-#name = "sidc"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[features]
-debug-gui = ["eframe","egui", "egui_file"]
-
 [dependencies]
 clap = { version = "4.5.9", features = ["derive"] }
 unicode-segmentation = "1.11.0"
@@ -18,3 +10,10 @@ unicode-segmentation = "1.11.0"
 eframe = { version = "0.27.2", optional = true }
 egui = { version = "0.27.2", optional = true }
 egui_file = { version = "0.17.0", optional = true }
+
+[[bin]]
+name = "sid"
+
+[[bin]]
+name = "gui"
+required-features = ["eframe", "egui", "egui_file"]

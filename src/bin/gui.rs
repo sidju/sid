@@ -2,23 +2,48 @@ use std::collections::HashMap;
 
 use sid::*;
 
-use clap::Parser;
+mod debug_gui;
+
 
 struct Program {
   instructions: Vec<DataValue>,
   global_scope: HashMap<String, RealValue>,
 }
 
-#[derive(Parser)]
-#[command(version)]
-struct CliArgs {
-  /// Path to file to execute code from or `-` for stdin
-  file: String,
-}
-
+#[cfg(target_arch = "wasm32")]
 fn main() {
-  let cli = CliArgs::parse();
-  run_file(&cli.file.clone());
+    // Make sure panics are logged using `console.error`.
+    console_error_panic_hook::set_once();
+
+    // Redirect tracing to console.log and friends:
+    tracing_wasm::set_as_global_default();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::start_web(
+            "canvas",
+            web_options,
+            Box::new(|_cc| Box::new(debug_gui::SidDebuggerApp::new())),
+        )
+        .await
+        .expect("failed to start eframe");
+    });
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn main() {
+    let options = eframe::NativeOptions {
+        ..Default::default()
+    };
+    let res = eframe::run_native(
+        "Sid - Debugger",
+        options,
+        Box::new(|_cc| Box::new(debug_gui::SidDebuggerApp::new())),
+    );
+
+    if res.is_err() {
+        println!("Error: {:?}", res);
+    }
 }
 
 fn run_file(path: &str) {
