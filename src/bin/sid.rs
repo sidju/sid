@@ -30,7 +30,7 @@ fn run_file(path: &str) {
 
 fn compile(source: & str) -> Program {
   // Parse that String into Vec<TemplateValue>
-  let parsed = parse_str(source);
+  let parsed = parse_str(source).expect("parse error");
   // Create the global scope, with built-in functions and constants
   // (Implementations of this don't yet exist)
   let global_scope = HashMap::new();

@@ -56,11 +56,14 @@ impl ToSyntax for ProgramValue {
 impl ToSyntax for TemplateData {
   fn to_syntax(&self) -> String {
     match self {
-      TemplateData::SubstackTemplate(v) => {
+      TemplateData::Substack(v) => {
         list_to_syntax(v, "{ #Template", "}")
       },
-      TemplateData::ListTemplate(v) => {
+      TemplateData::List(v) => {
         list_to_syntax(v, "[ #Template", "]")
+      },
+      TemplateData::Script(_) | TemplateData::Set(_) | TemplateData::Struct(_) => {
+        todo!()
       },
     }
   }

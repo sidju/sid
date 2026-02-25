@@ -1,43 +1,28 @@
-use crate::{
-  DataValue,
-  RealValue,
-};
+use super::{Graphemes, is_key_char};
+use std::iter::Peekable;
+use anyhow::{bail, Result};
+use crate::{DataValue, RealValue};
 
-use super::{
-  Peekable,
-  Graphemes,
-  is_key_char,
-};
-
-/// Parse out a label from the given char iterator.
+/// Parse a label or boolean literal.
 ///
-/// The first char should be the first char in the label.
-pub fn parse_label(
-  input: &mut Peekable<Graphemes>,
-) -> DataValue {
-  //let mut escaped = false;
-  let mut data = String::new();
-  loop {
-    if let Some(c) = input.peek() {
-      // Signifies end of label
-      if is_key_char(*c) {
-        break;
-      }
-      data.push_str(*c);
+/// A label is any sequence of graphemes that are not key characters.
+/// `true` and `false` are recognised as boolean literals.
+pub fn parse_label(input: &mut Peekable<Graphemes>) -> Result<DataValue> {
+    let mut data = String::new();
+    loop {
+        match input.peek() {
+            None => break,
+            Some(&ch) if is_key_char(ch) => break,
+            Some(&ch) => data.push_str(ch),
+        }
+        input.next();
     }
-    else { break; }
-    input.next();
-  }
-  if data.is_empty() {
-    panic!("Parsed empty label. Error in parse_program_sequnece.");
-  }
-  else if &data == "true" {
-    DataValue::Real(RealValue::Bool(true))
-  }
-  else if &data == "false" {
-    DataValue::Real(RealValue::Bool(false))
-  }
-  else {
-    DataValue::Label(data)
-  }
+    if data.is_empty() {
+        bail!("expected a label but found a key character or end of input");
+    }
+    Ok(match data.as_str() {
+        "true"  => DataValue::Real(RealValue::Bool(true)),
+        "false" => DataValue::Real(RealValue::Bool(false)),
+        _       => DataValue::Label(data),
+    })
 }

@@ -12,6 +12,8 @@ mod invoke;
 pub use invoke::*;
 mod built_in;
 pub use built_in::*;
+#[cfg(feature = "llvm")]
+pub mod llvm_backend;
 //
 //
 //pub fn interpret_str(

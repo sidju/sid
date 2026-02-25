@@ -79,13 +79,25 @@ pub struct Template {
 impl  Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
     Self{
-      data: TemplateData::SubstackTemplate(parsed.0),
+      data: TemplateData::Substack(parsed.0),
       consumes_stack_entries: parsed.1,
     }
   }
   pub fn list(parsed: (Vec<TemplateValue>, usize)) -> Self {
     Self{
-      data: TemplateData::ListTemplate(parsed.0),
+      data: TemplateData::List(parsed.0),
+      consumes_stack_entries: parsed.1,
+    }
+  }
+  pub fn set(parsed: (Vec<TemplateValue>, usize)) -> Self {
+    Self{
+      data: TemplateData::Set(parsed.0),
+      consumes_stack_entries: parsed.1,
+    }
+  }
+  pub fn script(parsed: (Vec<TemplateValue>, usize)) -> Self {
+    Self{
+      data: TemplateData::Script(parsed.0),
       consumes_stack_entries: parsed.1,
     }
   }
@@ -93,12 +105,11 @@ impl  Template {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum TemplateData {
-  SubstackTemplate(Vec<TemplateValue>),
-  ListTemplate(Vec<TemplateValue>),
-//  ScriptTemplate,
-//  StructTemplate,
-//  ListTemplate,
-//  SetTemplate,
+  Substack(Vec<TemplateValue>),
+  List(Vec<TemplateValue>),
+  Script(Vec<TemplateValue>),
+  Set(Vec<TemplateValue>),
+  Struct(Vec<(TemplateValue, TemplateValue)>),
 }
 impl  From<DataValue> for ProgramValue {
   fn from(item: DataValue) -> Self {

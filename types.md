@@ -61,3 +61,29 @@ integers and `map (key: str, val: int)` specifies a map from str to int.
 And of course you can provide a custom type specification for meta-types, just
 provide a custom type for the type argument(s), `list (x: int, y: int)` is a
 list of a struct matching (x: int, y: int).
+
+
+
+
+# New plan
+
+Types are split in two parts:
+
+- The base type, basically a binary representation
+- An optional restriction substack which uses the value and returns true if valid
+
+Each base type is a function returning a type instance `int!`.
+Meta-types accept a base type as an argument and return an instance `int! list!`.
+
+Restricted versions are created using the same name but with `r` prefixed.
+`(0 gt) rint!` for example (though I'm unsure of ordering of lt/gt).
+Using a restricted type as input for a meta-type is recommended, but there are
+also restrictions to apply to the meta-type (like length restriction and which
+fields should exist in a map/struct).
+
+(
+In addition to this, interfaces may be relevant. Note that they are implemented
+in golang by wrapping the concrete type in an interface container with its own
+type. The only addition we'd like to do to that is probably packing in the
+functions required by the interface into that structure, as a poor-man's vtable.
+)

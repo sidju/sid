@@ -25,7 +25,7 @@ pub fn render_template(
   ;
   use TemplateData as TD;
   let rendered_template: RealValue = match template.data {
-    TD::SubstackTemplate(source) => {
+    TD::Substack(source) => {
       let mut rendered: Vec<ProgramValue> = Vec::new();
       use TemplateValue as TV;
       for entry in source { match entry {
@@ -53,7 +53,10 @@ pub fn render_template(
       }}
       RealValue::Substack(rendered)
     },
-    TD::ListTemplate(source) => {
+    TD::List(_source) => {
+      todo!()
+    },
+    TD::Script(_) | TD::Set(_) | TD::Struct(_) => {
       todo!()
     },
   };

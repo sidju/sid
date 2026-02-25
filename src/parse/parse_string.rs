@@ -1,35 +1,20 @@
-#[derive(Debug)]
-pub enum ParseStringError {
-  UnterminatedString,
-}
-impl std::fmt::Display for ParseStringError {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result{
-    match self {
-      Self::UnterminatedString => {
-        write!(f, "String doesn't end before the source code does.")
-      },
-    }
-  }
-}
-impl std::error::Error for ParseStringError {}
+use super::Graphemes;
+use std::iter::Peekable;
+use anyhow::{bail, Result};
 
-/// Parse out a quoted string from the given char iterator.
-///
-/// The first char should be the opening quote.
-pub fn parse_string<'a>(
-  input: &mut impl Iterator<Item = &'a str>,
-) -> Result<String, ParseStringError> {
-  match input.next() {
-    Some("\"") => (),
-    _ => panic!("Invalid call to parse_string, first char should be \"."),
-  }
-  //let mut escaped = false;
-  let mut data = String::new();
-  for ch in input { match ch {
-    "\"" => { return Ok(data); },
-    x => { data.push_str(x); },
-  } }
-  // Long term we want to include when the string started, but that's later
-  // when we add that context data to the function input
-  Err(ParseStringError::UnterminatedString)
+/// Parse a `"…"` string literal.  The iterator must be positioned at the
+/// opening `"`.
+pub fn parse_string(input: &mut Peekable<Graphemes>) -> Result<String> {
+    match input.next() {
+        Some("\"") => (),
+        other => bail!("expected '\"' to open string literal, got {:?}", other),
+    }
+    let mut data = String::new();
+    for ch in input {
+        match ch {
+            "\"" => return Ok(data),
+            x => data.push_str(x),
+        }
+    }
+    bail!("unterminated string literal")
 }

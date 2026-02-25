@@ -5,9 +5,7 @@ pub fn parse_test_fixture(
   expected_output_template: Vec<TemplateValue>,
   expected_output_stack_entries_consumed: usize,
 ) {
-  let output = parse_str(
-    input,
-  );
+  let output = parse_str(input).expect("parse failed");
   assert_eq!(
     expected_output_template,
     output.0,
