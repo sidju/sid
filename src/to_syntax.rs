@@ -1,8 +1,9 @@
 
 use crate::types::*;
+use crate::SidType;
 
 pub trait ToSyntax
-where 
+where
   Self: Sized {
     fn to_syntax(&self) -> String;
 }
@@ -18,26 +19,30 @@ fn list_to_syntax<T: ToSyntax>(list: &[T], left_bracket: &str, right_bracket: &s
 impl ToSyntax for DataValue {
   fn to_syntax(&self) -> String {
     match self {
-      DataValue::Real(v) => v.to_syntax(),
+      DataValue::Bool(v) => v.to_string(),
+      DataValue::Str(v) => format!("\"{}\"", v),
+      DataValue::Char(v) => format!("\'{}\'", v),
+      DataValue::Int(v) => v.to_string(),
+      DataValue::Float(v) => v.to_string(),
+      DataValue::Substack(v) => list_to_syntax(v, "(", ")"),
+      DataValue::Script(v) => list_to_syntax(v, "<", ">"),
+      DataValue::List(v) => list_to_syntax(v, "[", "]"),
+      DataValue::Set(v) => list_to_syntax(v, "{", "}"),
+      DataValue::Struct(fields) => {
+        let inner = fields.iter()
+          .map(|(k, v)| format!("{}: {}", k, v.to_syntax()))
+          .collect::<Vec<_>>().join(", ");
+        format!("{{{}}}", inner)
+      },
+      DataValue::Map(entries) => {
+        let inner = entries.iter()
+          .map(|(k, v)| format!("{}: {}", k.to_syntax(), v.to_syntax()))
+          .collect::<Vec<_>>().join(", ");
+        format!("{{{}}}", inner)
+      },
+      DataValue::BuiltInFunction(v) => v.clone(),
+      DataValue::Type(v) => v.to_syntax(),
       DataValue::Label(v) => v.clone(),
-    }
-  }
-}
-impl ToSyntax for RealValue {
-  fn to_syntax(&self) -> String {
-    match self {
-      RealValue::Bool(v) => v.to_string(),
-      RealValue::Str(v) => format!("\"{}\"", v.clone()),
-      RealValue::Char(v) => format!("\'{}\'", v.clone()),
-      RealValue::Int(v) => v.to_string(),
-      RealValue::Float(v) => v.to_string(),
-      RealValue::Substack(v) => {
-        list_to_syntax(v, "{", "}")
-      },
-      RealValue::List(v) => {
-        list_to_syntax(v, "[", "]")
-      },
-      RealValue::BuiltInFunction(v) => v.clone(),
     }
   }
 }
@@ -45,9 +50,9 @@ impl ToSyntax for RealValue {
 impl ToSyntax for ProgramValue {
   fn to_syntax(&self) -> String {
     match self {
-      ProgramValue::Real(v) => v.to_syntax(),
-      ProgramValue::Label(v) => v.clone(),
+      ProgramValue::Data(v) => v.to_syntax(),
       ProgramValue::Invoke => "!".to_owned(),
+      ProgramValue::ComptimeInvoke => "@!".to_owned(),
       ProgramValue::Template(v) => v.data.to_syntax(),
     }
   }
@@ -56,14 +61,16 @@ impl ToSyntax for ProgramValue {
 impl ToSyntax for TemplateData {
   fn to_syntax(&self) -> String {
     match self {
-      TemplateData::Substack(v) => {
-        list_to_syntax(v, "{ #Template", "}")
-      },
-      TemplateData::List(v) => {
-        list_to_syntax(v, "[ #Template", "]")
-      },
-      TemplateData::Script(_) | TemplateData::Set(_) | TemplateData::Struct(_) => {
-        todo!()
+      TemplateData::Substack(v) => list_to_syntax(v, "(#Template", ")"),
+      TemplateData::List(v) => list_to_syntax(v, "[#Template", "]"),
+      TemplateData::Script(v) => list_to_syntax(v, "<#Template", ">"),
+      TemplateData::Set(v) => list_to_syntax(v, "{#Template", "}"),
+      TemplateData::Map(pairs) => {
+        let mut s = "{#Template".to_owned();
+        for (k, v) in pairs {
+          s = format!("{}\n {}: {} ", s, k.to_syntax(), v.to_syntax());
+        }
+        format!("{}\n}}", s)
       },
     }
   }
@@ -78,3 +85,33 @@ impl ToSyntax for TemplateValue {
       }
   }
 }
+
+impl ToSyntax for SidType {
+  fn to_syntax(&self) -> String {
+    match self {
+      SidType::Bool  => "bool".to_owned(),
+      SidType::Int   => "int".to_owned(),
+      SidType::Float => "float".to_owned(),
+      SidType::Char  => "char".to_owned(),
+      SidType::Str   => "str".to_owned(),
+      SidType::Label => "label".to_owned(),
+      SidType::Any   => "Any".to_owned(),
+      SidType::List(elem)             => format!("{} list @!", elem.to_syntax()),
+      SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
+      SidType::Fn { args, ret }       => format!("{} {} fn_type @!", args.to_syntax(), ret.to_syntax()),
+      SidType::Literal(v)             => v.to_syntax(),
+      SidType::Union(types) => {
+        let inner = types.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(", ");
+        format!("{{{}}}", inner)
+      },
+      SidType::Struct(fields) => {
+        let inner = fields.iter()
+          .map(|(name, t)| format!("{}: {}", name, t.to_syntax()))
+          .collect::<Vec<_>>().join(", ");
+        format!("{{{}}}", inner)
+      },
+    }
+  }
+}
+
+

@@ -17,4 +17,45 @@
 // - Relaxing of restrictions should be detected at compile time and a noop in
 //   the runtime.
 
-mod restriction;
+// mod restriction; // TODO: re-enable once TypeRestriction is fleshed out
+
+use crate::DataValue;
+
+/// A first-class type value in SID.
+///
+/// Types are values: any expression in a type position produces a `SidType`.
+/// Container variants use `Box<Self>` or `Vec<Self>` so the enum is not
+/// infinitely sized. `Literal` holds a concrete `DataValue` on the heap,
+/// allowing the cycle `SidType → DataValue → RealValue → SidType` to
+/// terminate at the `Box` boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SidType {
+    // Primitive types (pre-defined labels in global scope)
+    Bool,
+    Int,
+    Float,
+    Char,
+    Str,
+    Label,
+
+    // Parametric container types (RPN: push type args then call constructor)
+    /// `T list` — a homogeneous list whose elements are of type `T`
+    List(Box<Self>),
+    /// `K V map` — a map with key type `K` and value type `V`
+    Map { key: Box<Self>, value: Box<Self> },
+
+    // Composite types built from set / struct literals
+    /// `{T1, T2, …}` where every element is a type — a union of types
+    Union(Vec<Self>),
+    /// `{field1: T1, field2: T2, …}` where every value is a type — a struct type
+    Struct(Vec<(String, Self)>),
+
+    // Function / substack type (`{args: T, ret: T} fn_type!`)
+    Fn { args: Box<Self>, ret: Box<Self> },
+
+    // Special
+    /// Accepts any value; equivalent to a top type
+    Any,
+    /// A specific value used in a type position, e.g. `"yes"` in `{"yes", "no"}`
+    Literal(Box<DataValue>),
+}

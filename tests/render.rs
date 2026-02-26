@@ -5,8 +5,8 @@ use std::collections::HashMap;
 pub fn render_test_fixture(
   template: Template,
   mut parent_stack: Vec<DataValue>,
-  parent_scope: HashMap<String, RealValue>,
-  global_scope: HashMap<String, RealValue>,
+  parent_scope: HashMap<String, DataValue>,
+  global_scope: HashMap<String, DataValue>,
   expected_parent_stack: Vec<DataValue>,
   expected_rendered_stack: Vec<DataValue>,
 ) {
@@ -49,7 +49,7 @@ fn render_empty_substack() {
     vec![],
     // Expected rendered stack
     vec![
-      RealValue::Substack(vec![]).into(),
+      DataValue::Substack(vec![]).into(),
     ],
   )
 }
@@ -59,7 +59,7 @@ fn render_substack() {
   let mut global = HashMap::new();
   global.insert(
     "one".to_string(),
-    RealValue::Int(1),
+    DataValue::Int(1),
   );
   render_test_fixture(
     // Template
@@ -74,22 +74,106 @@ fn render_substack() {
     )),
     // Parent stack
     vec![
-      RealValue::Bool(true).into(),
-      RealValue::Int(2).into(),
+      DataValue::Bool(true).into(),
+      DataValue::Int(2).into(),
     ],
     // Parent and global scope, respectively
     HashMap::new(),
     global,
     // Expected parent stack
-    vec![RealValue::Bool(true).into()],
+    vec![DataValue::Bool(true).into()],
     // Expected rendered stack
     vec![
-      RealValue::Substack(vec![
-        RealValue::Int(2).into(),
-        RealValue::Int(1).into(),
+      DataValue::Substack(vec![
+        DataValue::Int(2).into(),
+        DataValue::Int(1).into(),
         DataValue::Label("add".to_string()).into(),
         ProgramValue::Invoke.into(),
       ]).into(),
     ],
+  )
+}
+
+#[test]
+fn render_list() {
+  render_test_fixture(
+    Template::list((
+      vec![
+        DataValue::Int(1).into(),
+        DataValue::Int(2).into(),
+        DataValue::Int(3).into(),
+      ],
+      0
+    )),
+    vec![],
+    HashMap::new(),
+    HashMap::new(),
+    vec![],
+    vec![DataValue::List(vec![
+      DataValue::Int(1),
+      DataValue::Int(2),
+      DataValue::Int(3),
+    ])],
+  )
+}
+
+#[test]
+fn render_set() {
+  render_test_fixture(
+    Template::set((
+      vec![
+        DataValue::Str("a".to_owned()).into(),
+        DataValue::Str("b".to_owned()).into(),
+      ],
+      0
+    )),
+    vec![],
+    HashMap::new(),
+    HashMap::new(),
+    vec![],
+    vec![DataValue::Set(vec![
+      DataValue::Str("a".to_owned()),
+      DataValue::Str("b".to_owned()),
+    ])],
+  )
+}
+
+#[test]
+fn render_map() {
+  render_test_fixture(
+    Template::map(
+      vec![
+        (DataValue::Label("x".to_owned()).into(), DataValue::Int(1).into()),
+        (DataValue::Label("y".to_owned()).into(), DataValue::Int(2).into()),
+      ],
+      0
+    ),
+    vec![],
+    HashMap::new(),
+    HashMap::new(),
+    vec![],
+    vec![DataValue::Map(vec![
+      (DataValue::Label("x".to_owned()), DataValue::Int(1)),
+      (DataValue::Label("y".to_owned()), DataValue::Int(2)),
+    ])],
+  )
+}
+
+#[test]
+fn render_script() {
+  render_test_fixture(
+    Template::script((
+      vec![
+        DataValue::Int(42).into(),
+      ],
+      0
+    )),
+    vec![],
+    HashMap::new(),
+    HashMap::new(),
+    vec![],
+    vec![DataValue::Script(vec![
+      ProgramValue::Data(DataValue::Int(42)),
+    ])],
   )
 }

@@ -23,8 +23,8 @@ fn parse_string() {
   parse_test_fixture(
     "\"hi\" \"there\"",
     vec![
-      RealValue::Str("hi".to_owned()).into(),
-      RealValue::Str("there".to_owned()).into(),
+      DataValue::Str("hi".to_owned()).into(),
+      DataValue::Str("there".to_owned()).into(),
     ],
     0
   )
@@ -35,8 +35,8 @@ fn parse_char() {
   parse_test_fixture(
     "'H' '👮‍♀️'",
     vec![
-      RealValue::Char("H".to_owned()).into(),
-      RealValue::Char("👮‍♀️".to_owned()).into(),
+      DataValue::Char("H".to_owned()).into(),
+      DataValue::Char("👮‍♀️".to_owned()).into(),
     ],
     0
   )
@@ -59,8 +59,8 @@ fn parse_bool() {
   parse_test_fixture(
     "true false",
     vec![
-      RealValue::Bool(true).into(),
-      RealValue::Bool(false).into(),
+      DataValue::Bool(true).into(),
+      DataValue::Bool(false).into(),
     ],
     0
   )
@@ -71,8 +71,8 @@ fn parse_integer() {
   parse_test_fixture(
     "-10 500000",
     vec![
-      RealValue::Int(-10).into(),
-      RealValue::Int(500000).into(),
+      DataValue::Int(-10).into(),
+      DataValue::Int(500000).into(),
     ],
     0
   )
@@ -83,8 +83,8 @@ fn parse_float() {
   parse_test_fixture(
     "-10.5 0.66",
     vec![
-      RealValue::Float(-10.5).into(),
-      RealValue::Float(0.66).into(),
+      DataValue::Float(-10.5).into(),
+      DataValue::Float(0.66).into(),
     ],
     0
   )
@@ -119,8 +119,8 @@ fn parse_substack() {
     vec![
       Template::substack((
         vec![
-          RealValue::Str("data".to_owned()).into(),
-          RealValue::Int(5).into(),
+          DataValue::Str("data".to_owned()).into(),
+          DataValue::Int(5).into(),
           TemplateValue::ParentStackMove(1),
         ],
         1
@@ -137,8 +137,8 @@ fn parse_list() {
     vec![
       Template::list((
         vec![
-          RealValue::Str("data".to_owned()).into(),
-          RealValue::Int(5).into(),
+          DataValue::Str("data".to_owned()).into(),
+          DataValue::Int(5).into(),
           TemplateValue::ParentStackMove(1),
         ],
         1
@@ -155,7 +155,7 @@ fn parse_invoke() {
     vec![
       Template::substack((
         vec![
-          RealValue::Int(5).into(),
+          DataValue::Int(5).into(),
         ],
         0
       )).into(),
@@ -171,8 +171,75 @@ fn parse_comments() {
   parse_test_fixture(
     "\"hi\" #not\n \"there\"\n#more comments",
     vec![
-      RealValue::Str("hi".to_owned()).into(),
-      RealValue::Str("there".to_owned()).into(),
+      DataValue::Str("hi".to_owned()).into(),
+      DataValue::Str("there".to_owned()).into(),
+    ],
+    0
+  )
+}
+
+#[test]
+fn parse_script() {
+  parse_test_fixture(
+    "<\"hi\" 5>",
+    vec![
+      Template::script((
+        vec![
+          DataValue::Str("hi".to_owned()).into(),
+          DataValue::Int(5).into(),
+        ],
+        0
+      )).into(),
+    ],
+    0
+  )
+}
+
+#[test]
+fn parse_set() {
+  parse_test_fixture(
+    "{1, 2, 3}",
+    vec![
+      Template::set((
+        vec![
+          DataValue::Int(1).into(),
+          DataValue::Int(2).into(),
+          DataValue::Int(3).into(),
+        ],
+        0
+      )).into(),
+    ],
+    0
+  )
+}
+
+#[test]
+fn parse_map() {
+  parse_test_fixture(
+    "{x: 1, y: 2}",
+    vec![
+      Template::map(
+        vec![
+          (DataValue::Label("x".to_owned()).into(), DataValue::Int(1).into()),
+          (DataValue::Label("y".to_owned()).into(), DataValue::Int(2).into()),
+        ],
+        0
+      ).into(),
+    ],
+    0
+  )
+}
+
+#[test]
+fn parse_comptime_invoke() {
+  parse_test_fixture(
+    "(5)@!",
+    vec![
+      Template::substack((
+        vec![DataValue::Int(5).into()],
+        0
+      )).into(),
+      ProgramValue::ComptimeInvoke.into(),
     ],
     0
   )

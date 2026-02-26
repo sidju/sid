@@ -17,8 +17,8 @@ fn parse_bool() {
     ParseTestFixture {
         input: "true false",
         expected_output: vec![
-            RealValue::Bool(true).into(),
-            RealValue::Bool(false).into(),
+            DataValue::Bool(true).into(),
+            DataValue::Bool(false).into(),
         ],
         expected_consumed: 0,
     }.test();

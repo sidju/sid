@@ -1,13 +1,13 @@
 use super::{Graphemes, is_key_char};
 use std::iter::Peekable;
 use anyhow::{bail, Result};
-use crate::RealValue;
+use crate::DataValue;
 
 /// Parse an integer or float literal.
 ///
 /// The iterator must be positioned at the first character of the number
 /// (a digit or a leading `-`).
-pub fn parse_number(input: &mut Peekable<Graphemes>) -> Result<RealValue> {
+pub fn parse_number(input: &mut Peekable<Graphemes>) -> Result<DataValue> {
     let mut is_float = false;
     let mut agg = String::new();
     loop {
@@ -25,8 +25,8 @@ pub fn parse_number(input: &mut Peekable<Graphemes>) -> Result<RealValue> {
         input.next();
     }
     Ok(if is_float {
-        RealValue::Float(agg.parse()?)
+        DataValue::Float(agg.parse()?)
     } else {
-        RealValue::Int(agg.parse()?)
+        DataValue::Int(agg.parse()?)
     })
 }

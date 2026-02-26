@@ -1,4 +1,7 @@
-pub trait<T> Restriction<T> {
+use std::collections::HashSet;
+use crate::DataValue;
+
+pub trait Restriction<T> {
   fn allows(&self, object: T) -> bool;
 }
 
@@ -8,7 +11,7 @@ pub enum TypeRestriction {
   Bool,
   // Str and Char can only really be checked by base type and regex
   Str{min_len: Option<usize>, max_len: Option<usize>, regex: Option<String>},
-  Char{regex: Option<String>}
+  Char{regex: Option<String>},
   // Numbers have a lot of pretty easy ways to filter, but start simple
   Int{start: Option<i64>, end: Option<i64>},
   Float{start: Option<f64>, end: Option<f64>},
@@ -30,7 +33,7 @@ pub enum TypeRestriction {
 
   // Generic/abstract
   Any, // Not recommended ever, but sure
-  Literals(HashSet<RealValue>),
+  Literals(HashSet<DataValue>),
   Not(Box<Self>),
   Or(Box<Self>, Box<Self>),
   And(Box<Self>, Box<Self>),
@@ -45,7 +48,7 @@ pub enum TypeRestriction {
 impl Restriction<&Self> for TypeRestriction {
   fn allows(&self, object: &Self) -> bool {
     use TypeRestriction::*;
-    match (self, other) {
+    match (self, object) {
       // If self is Any always returns true
       (Any, _) => true,
       // The basic identical case

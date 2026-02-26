@@ -1,7 +1,7 @@
-use super::{Graphemes, parse_program_sequence};
+use super::{Graphemes, parse_program_sequence, parse_template_value};
 use std::iter::Peekable;
 use anyhow::{bail, Result};
-use crate::{Template, TemplateData, TemplateValue};
+use crate::{Template, TemplateValue};
 
 /// Parse a `$n` (parent stack move) or `$name` (parent label) access.
 ///
@@ -63,7 +63,7 @@ fn parse_brace_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
     }
     let raw: String = buf.join("");
     if has_colon {
-        parse_struct(&raw)
+        parse_map(&raw)
     } else {
         Ok(Template::set(parse_program_sequence(
             &mut unicode_segmentation::UnicodeSegmentation::graphemes(raw.as_str(), true).peekable(),
@@ -73,23 +73,26 @@ fn parse_brace_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
 }
 
 /// Parse `key: value, …` pairs from the collected brace body.
-fn parse_struct(raw: &str) -> Result<Template> {
+/// Keys are any single TemplateValue (labels are kept as values, not resolved).
+fn parse_map(raw: &str) -> Result<Template> {
     use unicode_segmentation::UnicodeSegmentation;
     let mut iter = raw.graphemes(true).peekable();
     let mut pairs: Vec<(TemplateValue, TemplateValue)> = Vec::new();
     let mut max_consumed = 0usize;
+
+    let track = |tv: &TemplateValue, max: &mut usize| {
+        if let TemplateValue::ParentStackMove(i) = tv { *max = (*max).max(*i); }
+    };
+
     loop {
-        // Skip whitespace / commas
-        loop {
-            match iter.peek() {
-                Some(&" ") | Some(&"\n") | Some(&"\t") | Some(&",") => { iter.next(); }
-                _ => break,
-            }
-        }
-        if iter.peek().is_none() { break; }
-        // Parse key (must be a label)
-        let key = super::parse_label(&mut iter)?;
-        // Expect `:`
+        // Parse key — exactly one value
+        let key = match parse_template_value(&mut iter)? {
+            Some(v) => v,
+            None => break,
+        };
+        track(&key, &mut max_consumed);
+
+        // Skip whitespace, then expect `:`
         loop {
             match iter.peek() {
                 Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
@@ -98,21 +101,29 @@ fn parse_struct(raw: &str) -> Result<Template> {
         }
         match iter.next().as_deref() {
             Some(":") => (),
-            other => bail!("expected ':' after struct key, got {:?}", other),
+            other => bail!("expected ':' after map key, got {:?}", other),
         }
-        // Parse value — a single template value
-        let (mut seq, consumed) = parse_program_sequence(&mut iter, Some(","))?;
-        max_consumed = max_consumed.max(consumed);
-        // Reparse remainder if we hit end without a comma terminator
-        let val = if seq.len() == 1 {
-            seq.remove(0)
-        } else {
-            bail!("expected exactly one value per struct field, got {}", seq.len())
+
+        let val = match parse_template_value(&mut iter)? {
+            Some(v) => v,
+            None => bail!("expected map value, got end of input"),
         };
-        pairs.push((key.into(), val));
+        track(&val, &mut max_consumed);
+
+        pairs.push((key, val));
+
+        // Skip whitespace, then expect `,` or end
+        loop {
+            match iter.peek() {
+                Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
+                _ => break,
+            }
+        }
+        match iter.peek().map(|s| *s) {
+            None => break,
+            Some(",") => continue,
+            Some(other) => bail!("expected ',' or end of map, got {:?}", other),
+        }
     }
-    Ok(Template {
-        data: TemplateData::Struct(pairs),
-        consumes_stack_entries: max_consumed,
-    })
+    Ok(Template::map(pairs, max_consumed))
 }

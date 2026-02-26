@@ -1,5 +1,7 @@
 // We create side-effects through a trait implementation
 // (This allows mocking all side effects in one for testing)
+pub mod type_system;
+pub use type_system::SidType;
 mod types;
 pub use types::*;
 mod to_syntax;

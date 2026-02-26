@@ -5,70 +5,79 @@
 /// entries needed to render it into a list of ProgramValue ready for execution.
 ///
 /// # Rendering -> ProgramValue:
-/// Parent stack is consumed and Parent label context read as needed to
-/// Convert all TemplateValues into ProgramValues. When this is done the values
+/// Parent stack is consumed and parent label context read as needed to
+/// convert all TemplateValues into ProgramValues. When this is done the values
 /// are ready to put on the program stack.
 ///
 /// # Execution -> DataValue:
-/// ProgramValue is a value ready to be executed, but not necessarily valid to
-/// write onto the stack. Real and Label can be written directly, but Templates
-/// are rendered into their concrete objects before writing them to the Stack
-/// and Invoke tries to call the value on the top of the stack as a function.
+/// ProgramValues are popped from the program stack and acted on. `Data` pushes
+/// its payload onto the data stack. `Template` renders into DataValues and
+/// pushes them. `Invoke` pops the top of the data stack and executes it.
 ///
-///
-/// # Extra confusion:
-/// ProgramValue:s cannot be written to the data stack, but a Substack or
-/// function can be written to the data stack even though it contains them.
-///
-/// As such, while a Template can't be written to the stack, a Substack
-/// containing a Template can be handed around freely. This means that that
-/// template is rendered when the Substack is invoked.
-///
-/// The allowed types are a structure of data lifecycle, not a restriction on
-/// what is possible.
+/// Labels are first-class values: they travel through the system as `DataValue::Label`
+/// and are resolved lazily only when crossing a type boundary (e.g. on invoke
+/// or when consumed by a typed function parameter). This mirrors the Erlang
+/// property where atoms are valid values usable as implicit enums.
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use crate::type_system::SidType;
 
 pub trait BuiltInFunction: Debug {
   fn execute(&self,
     data_stack: &mut Vec<DataValue>,
     program_stack: &mut Vec<ProgramValue>,
-    local_scope: &mut HashMap<String, RealValue>,
-    global_scope: &mut HashMap<String, RealValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    global_scope: &mut HashMap<String, DataValue>,
   );
 }
 
+/// A fully concrete value — the currency of the data stack and scope maps.
+///
+/// `Label` is included here because labels are first-class values that can be
+/// passed around freely and resolved lazily at type boundaries.
+///
+/// `Substack` holds a packaged sequence of `ProgramValue`s. This is the
+/// intentional exception to direct nesting: functions and closures are
+/// represented as substacks, making them first-class citizens.
 #[derive(Debug, Clone, PartialEq)]
-pub enum RealValue {
+pub enum DataValue {
   Bool(bool),
   Str(String),
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),
+  /// A packaged program sequence — the representation of functions/closures.
+  /// Holds `ProgramValue`s rather than `DataValue`s so that un-rendered
+  /// templates inside a substack are rendered only when the substack is invoked.
   Substack(Vec<ProgramValue>),
+  /// Like `Substack` but sequential execution is guaranteed (no concurrency).
+  Script(Vec<ProgramValue>),
   List(Vec<DataValue>),
+  Set(Vec<DataValue>),
+  Struct(Vec<(String, DataValue)>),
+  Map(Vec<(DataValue, DataValue)>),
   BuiltInFunction(String),
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum DataValue {
-  Real(RealValue),
+  Type(SidType),
   Label(String),
 }
-impl  From<RealValue> for DataValue {
-  fn from(item: RealValue) -> Self {
-    Self::Real(item)
-  }
-}
 
-// The values of the program as they look after parsing (before execution)
+/// A value on the program stack: either concrete data ready to push, a pending
+/// invocation (`!`), a compile-time invocation (`@!`), or an unrendered
+/// template containing substitution slots.
 #[derive(PartialEq, Debug, Clone)]
-pub enum ProgramValue{
-  Real(RealValue),
-  Label(String),
+pub enum ProgramValue {
+  Data(DataValue),
   Invoke,
+  ComptimeInvoke,
   Template(Template),
+}
+
+impl From<DataValue> for ProgramValue {
+  fn from(item: DataValue) -> Self { Self::Data(item) }
+}
+impl From<Template> for ProgramValue {
+  fn from(item: Template) -> Self { Self::Template(item) }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -76,30 +85,21 @@ pub struct Template {
   pub data: TemplateData,
   pub consumes_stack_entries: usize,
 }
-impl  Template {
+impl Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self{
-      data: TemplateData::Substack(parsed.0),
-      consumes_stack_entries: parsed.1,
-    }
+    Self { data: TemplateData::Substack(parsed.0), consumes_stack_entries: parsed.1 }
   }
   pub fn list(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self{
-      data: TemplateData::List(parsed.0),
-      consumes_stack_entries: parsed.1,
-    }
+    Self { data: TemplateData::List(parsed.0), consumes_stack_entries: parsed.1 }
   }
   pub fn set(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self{
-      data: TemplateData::Set(parsed.0),
-      consumes_stack_entries: parsed.1,
-    }
+    Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1 }
+  }
+  pub fn map(pairs: Vec<(TemplateValue, TemplateValue)>, consumes: usize) -> Self {
+    Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes }
   }
   pub fn script(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self{
-      data: TemplateData::Script(parsed.0),
-      consumes_stack_entries: parsed.1,
-    }
+    Self { data: TemplateData::Script(parsed.0), consumes_stack_entries: parsed.1 }
   }
 }
 
@@ -109,51 +109,24 @@ pub enum TemplateData {
   List(Vec<TemplateValue>),
   Script(Vec<TemplateValue>),
   Set(Vec<TemplateValue>),
-  Struct(Vec<(TemplateValue, TemplateValue)>),
-}
-impl  From<DataValue> for ProgramValue {
-  fn from(item: DataValue) -> Self {
-    match item {
-      DataValue::Real(x) => Self::Real(x),
-      DataValue::Label(l) => Self::Label(l),
-    }
-  }
-}
-impl  From<RealValue> for ProgramValue {
-  fn from(item: RealValue) -> Self {
-    Self::Real(item)
-  }
-}
-impl  From<Template> for ProgramValue {
-  fn from(item: Template) -> Self {
-    Self::Template(item)
-  }
+  /// `{key: value, …}` — keys are any TemplateValue (labels treated as values).
+  /// Produces a `DataValue::Map`; use `struct!` to further narrow to a Struct.
+  Map(Vec<(TemplateValue, TemplateValue)>),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum TemplateValue{
+pub enum TemplateValue {
   ParentLabel(String),
   ParentStackMove(usize),
 //  ParentStackCopy(usize), // Maybe?
   Literal(ProgramValue),
 }
-impl  From<DataValue> for TemplateValue {
-  fn from(item: DataValue) -> Self {
-    Self::Literal(item.into())
-  }
+impl From<DataValue> for TemplateValue {
+  fn from(item: DataValue) -> Self { Self::Literal(item.into()) }
 }
-impl  From<RealValue> for TemplateValue {
-  fn from(item: RealValue) -> Self {
-    Self::Literal(item.into())
-  }
+impl From<ProgramValue> for TemplateValue {
+  fn from(item: ProgramValue) -> Self { Self::Literal(item) }
 }
-impl  From<ProgramValue> for TemplateValue {
-  fn from(item: ProgramValue) -> Self {
-    Self::Literal(item)
-  }
-}
-impl  From<Template> for TemplateValue {
-  fn from(item: Template) -> Self {
-    Self::Literal(item.into())
-  }
+impl From<Template> for TemplateValue {
+  fn from(item: Template) -> Self { Self::Literal(item.into()) }
 }

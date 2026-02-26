@@ -25,11 +25,28 @@ fn parse_substack() {
         expected_output: vec![
             Template::substack((
                 vec![
-                    RealValue::Str("data".to_owned()).into(),
-                    RealValue::Int(5).into(),
+                    DataValue::Str("data".to_owned()).into(),
+                    DataValue::Int(5).into(),
                     TemplateValue::ParentStackMove(1),
                 ],
                 1
+            )).into(),
+        ],
+        expected_consumed: 0,
+    }.test();
+}
+
+#[test]
+fn parse_script() {
+    ParseTestFixture {
+        input: "<\"hi\" 5>",
+        expected_output: vec![
+            Template::script((
+                vec![
+                    DataValue::Str("hi".to_owned()).into(),
+                    DataValue::Int(5).into(),
+                ],
+                0
             )).into(),
         ],
         expected_consumed: 0,
@@ -43,12 +60,47 @@ fn parse_list() {
         expected_output: vec![
             Template::list((
                 vec![
-                    RealValue::Str("data".to_owned()).into(),
-                    RealValue::Int(5).into(),
+                    DataValue::Str("data".to_owned()).into(),
+                    DataValue::Int(5).into(),
                     TemplateValue::ParentStackMove(1),
                 ],
                 1
             )).into(),
+        ],
+        expected_consumed: 0,
+    }.test();
+}
+
+#[test]
+fn parse_set() {
+    ParseTestFixture {
+        input: "{1, 2, 3}",
+        expected_output: vec![
+            Template::set((
+                vec![
+                    DataValue::Int(1).into(),
+                    DataValue::Int(2).into(),
+                    DataValue::Int(3).into(),
+                ],
+                0
+            )).into(),
+        ],
+        expected_consumed: 0,
+    }.test();
+}
+
+#[test]
+fn parse_map() {
+    ParseTestFixture {
+        input: "{x: 1, y: 2}",
+        expected_output: vec![
+            Template::map(
+                vec![
+                    (DataValue::Label("x".to_owned()).into(), DataValue::Int(1).into()),
+                    (DataValue::Label("y".to_owned()).into(), DataValue::Int(2).into()),
+                ],
+                0
+            ).into(),
         ],
         expected_consumed: 0,
     }.test();

@@ -1,0 +1,1 @@
+- Make the list/set/map parsers only accept Template values, reject invokes.

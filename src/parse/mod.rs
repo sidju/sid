@@ -62,7 +62,7 @@ pub fn parse_program_sequence(
 /// Returns `None` when the iterator is exhausted (signals end of input to
 /// the caller rather than an error, since the caller knows whether more input
 /// is required).
-fn parse_template_value(
+pub(super) fn parse_template_value(
     iter: &mut Peekable<Graphemes>,
 ) -> Result<Option<TemplateValue>> {
     loop {
@@ -80,13 +80,20 @@ fn parse_template_value(
             // Insignificant whitespace and comma separators.
             " " | "\n" | "\t" | "," => { iter.next(); }
             // String literal.
-            "\"" => return Ok(Some(RealValue::Str(parse_string(iter)?).into())),
+            "\"" => return Ok(Some(DataValue::Str(parse_string(iter)?).into())),
             // Char literal.
-            "'" => return Ok(Some(RealValue::Char(parse_char(iter)?).into())),
+            "'" => return Ok(Some(DataValue::Char(parse_char(iter)?).into())),
             // Template literals: substack, list, set/struct, script.
             "(" | "[" | "{" | "<" => return Ok(Some(parse_template(iter)?.into())),
-            // Invoke.
+            // Invoke / comptime-invoke.
             "!" => { iter.next(); return Ok(Some(ProgramValue::Invoke.into())); }
+            "@" => {
+                iter.next();
+                match iter.next().as_deref() {
+                    Some("!") => return Ok(Some(ProgramValue::ComptimeInvoke.into())),
+                    other => bail!("expected '!' after '@', got {:?}", other),
+                }
+            }
             // Stack / scope substitution inside a template.
             "$" => return Ok(Some(parse_parent_access(iter)?)),
             // Number (digit or leading minus).

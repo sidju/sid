@@ -17,7 +17,8 @@ consume values from the top of the stack and push their results back.
 | label | `foo` `my_thing` | Bare identifier; see *Label resolution* below |
 | list | `[1, "two", '3']` | Enclosed by `[]`; element types need not match |
 | set | `{1, "two", 3}` | Enclosed by `{}`; no `:` at the first parsing level |
-| struct | `{one: "one", two: 2.0}` | Enclosed by `{}`; `:` at the first parsing level |
+| map | `{one: "one", two: 2.0}` | Enclosed by `{}`; `:` at the first parsing level; keys are label values |
+| struct | `{one: "one"} struct @!` | A map whose keys are validated as labels |
 | substack | `(16 16 mul sqrt)` | Enclosed by `()`; a value that can be invoked with `!` |
 | script | `<"Hi" print "there" print>` | Enclosed by `<>`; like substack but sequential execution guaranteed |
 
@@ -28,6 +29,13 @@ consume values from the top of the stack and push their results back.
 ### Invoke (`!`)
 
 `!` pops the top of the stack and executes it as a substack or script.
+
+### Comptime invoke (`@!`)
+
+`@!` marks an invocation that must be evaluated during the comptime pass (see
+Value lifecycle). The annotation is contagious: all invocations within a
+comptime-invoked body are also treated as comptime. In a compiled (LLVM) target
+any `@!` token surviving to code generation is also an error.
 
 ### Stack substitution (`$n` / `$name`)
 
@@ -109,12 +117,17 @@ Each thread of execution owns two stacks:
 ### Value lifecycle
 
 ```
-parse  →  TemplateValue   (may contain $n / $name substitution slots)
-render →  ProgramValue    (substitution resolved against parent stack/scope)
-invoke →  DataValue       (written to the data stack)
+parse       →  Vec<TemplateValue>   (may contain $n / $name substitution slots)
+comptime    →  Vec<TemplateValue>   (@! sites evaluated; inputs must be concrete)
+render      →  Vec<ProgramValue>    (substitution resolved against parent stack/scope)
+invoke      →  DataValue            (written to the data stack)
 ```
 
-Templates (`Substack`, `Script`, `List`, `Set`, `Struct`) cannot be placed
+The entire program — including the outermost top-level code — is represented as
+`Vec<TemplateValue>`, so the comptime pass operates uniformly at every nesting
+depth without needing a separate representation.
+
+Templates (`Substack`, `Script`, `List`, `Set`, `Map`) cannot be placed
 directly on the data stack, but a `Substack` *containing* them can. The inner
 template is rendered when its enclosing substack is invoked.
 
@@ -123,7 +136,7 @@ template is rendered when its enclosing substack is invoked.
 ## Functions
 
 All functions in SID take exactly one argument and return exactly one value.
-Multiple inputs or outputs are handled by grouping them in a struct or list.
+Multiple inputs or outputs are handled by grouping them in a map or list.
 
 This keeps function signatures uniform and makes currying and higher-order
 combinators straightforward.
@@ -156,14 +169,15 @@ and a plain value when all of its elements are plain values.
 | `{1, 2, 3}` | values | set value |
 | `{"yes", "no"}` | values | set value (usable as an enum type) |
 | `{str, int}` | types | union type |
-| `{x: 1, y: 2}` | values | struct value |
-| `{x: float, y: float}` | types | struct type |
+| `{x: 1, y: 2}` | values | map value (label keys are values) |
+| `{x: 1, y: 2} struct @!` | — | struct value (validates label keys) |
+| `{x: float, y: float}` | types | map type |
 | `[1, 2, 3]` | values | list value |
-| `int list` | type arg | list type |
-| `str int map` | type args | map type (key `str`, value `int`) |
+| `int list @!` | type arg | list type |
+| `str int map @!` | type args | map type (key `str`, value `int`) |
 
 Parametric type constructors (`list`, `set`, `map`) follow RPN order: push the
-type argument(s) first, then call the constructor.
+type argument(s) first, then call the constructor with `@!`.
 
 ### Label resolution
 
@@ -185,12 +199,12 @@ approx_pi 2        add!   # add expects {a: int, b: int}   → approx_pi is reso
 
 ### Function types
 
-The type of a substack (its signature) is expressed with `fn_type!`, which
+The type of a substack (its signature) is expressed with `fn_type @!`, which
 takes `{args: type, ret: type}` and returns a type. This is used when a
 function accepts another function as an argument:
 
 ```
-{ xs: int list, f: {n: int} int fn_type! }
+{ xs: int list @!, f: {n: int} int fn_type @! }
 ```
 
 ### Type aliases
@@ -200,7 +214,7 @@ Ordinary `def` stores a type under a label:
 ```
 Point   {x: float, y: float}    def!
 Answer  {"yes", "no", "maybe"}  def!   # union of three string literals
-Coords  Point list               def!
+Coords  Point list @!            def!
 ```
 
 ### Restricted types (TODO)

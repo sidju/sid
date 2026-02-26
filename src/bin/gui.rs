@@ -7,7 +7,7 @@ mod debug_gui;
 
 struct Program {
   instructions: Vec<DataValue>,
-  global_scope: HashMap<String, RealValue>,
+  global_scope: HashMap<String, DataValue>,
 }
 
 #[cfg(target_arch = "wasm32")]
