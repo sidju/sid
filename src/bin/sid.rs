@@ -5,7 +5,7 @@ use sid::*;
 use clap::Parser;
 
 struct Program {
-  instructions: Vec<DataValue>,
+  instructions: Vec<TemplateValue>,
   global_scope: HashMap<String, DataValue>,
 }
 
@@ -28,36 +28,33 @@ fn run_file(path: &str) {
   run(&file_content);
 }
 
-fn compile(source: & str) -> Program {
-  // Parse that String into Vec<TemplateValue>
+fn compile(source: &str) -> Program {
   let parsed = parse_str(source).expect("parse error");
-  // Create the global scope, with built-in functions and constants
-  // (Implementations of this don't yet exist)
   let global_scope = HashMap::new();
-  // Render that Vec<TemplateValue> as a Substack
+  let comptime_builtins = get_comptime_builtins();
+  let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &global_scope)
+    .expect("comptime error");
+  // Wrap the post-comptime sequence as a substack and render it to get the
+  // initial data stack (TemplateValue entries ready for the interpreter).
   let rendered = render_template(
-    Template::substack(parsed),
-    &mut Vec::new(), // Current stack, not applicable
-    &mut HashMap::new(), // Current local scope, not applicable
+    Template::substack((after_comptime, 0)),
+    &mut Vec::new(),
+    &HashMap::new(),
     &global_scope,
   );
-  return Program{
-    instructions: rendered,
-    global_scope,
-  };
+  // render_template returns Vec<DataValue>; lift them into TemplateValue.
+  let instructions = rendered.into_iter().map(TemplateValue::from).collect();
+  Program { instructions, global_scope }
 }
 
 fn run(source: &str) {
   let program = compile(source);
-  // The rendering output is the whole data stack initially
-  // And an invoke the whole program
   let program_stack = vec![ProgramValue::Invoke];
-  let data_stack = program.instructions;
-  let built_in_functions = get_built_in_functions();
+  let runtime_builtins = get_interpret_builtins();
   interpret(
     program_stack,
-    data_stack,
+    program.instructions,
     program.global_scope,
-    &built_in_functions,
+    &runtime_builtins,
   );
 }

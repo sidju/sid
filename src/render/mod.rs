@@ -52,7 +52,7 @@ fn program_values_to_data_values(program_values: Vec<ProgramValue>) -> Vec<DataV
 
 pub fn render_template(
   template: Template,
-  parent_stack: &mut Vec<DataValue>,
+  parent_stack: &mut Vec<TemplateValue>,
   parent_scope: &HashMap<String, DataValue>,
   global_scope: &HashMap<String, DataValue>,
 ) -> Vec<DataValue> {
@@ -61,7 +61,11 @@ pub fn render_template(
   }
   let mut consumed_stack: Vec<Option<DataValue>> = parent_stack
     .drain(parent_stack.len() - template.consumes_stack_entries ..)
-    .map(|x| Some(x))
+    .map(|tv| match tv {
+      TemplateValue::Literal(ProgramValue::Data(v)) => v,
+      other => panic!("render_template: parent stack entry is not a concrete DataValue: {:?}", other),
+    })
+    .map(|v| Some(v))
     .collect();
 
   use TemplateData as TD;

@@ -40,7 +40,7 @@ impl ToSyntax for DataValue {
           .collect::<Vec<_>>().join(", ");
         format!("{{{}}}", inner)
       },
-      DataValue::BuiltInFunction(v) => v.clone(),
+      DataValue::BuiltIn(v) => v.clone(),
       DataValue::Type(v) => v.to_syntax(),
       DataValue::Label(v) => v.clone(),
     }

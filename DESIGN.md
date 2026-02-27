@@ -135,11 +135,60 @@ template is rendered when its enclosing substack is invoked.
 
 ## Functions
 
-All functions in SID take exactly one argument and return exactly one value.
-Multiple inputs or outputs are handled by grouping them in a map or list.
+Functions in SID take zero or one argument and return zero or one value.
+Multiple inputs or outputs are handled by grouping them in a struct or list.
 
-This keeps function signatures uniform and makes currying and higher-order
-combinators straightforward.
+The convention for multiple named inputs is a **struct**:
+
+```
+{ x: 3.0, y: 4.0 } distance !
+```
+
+The convention for multiple positional inputs or outputs is a **typed list**
+(a list whose type annotation describes each position):
+
+```
+[3.0 4.0] distance !   # arg type: [float float]
+```
+
+### Built-in function wrapper
+
+Built-in functions are registered as implementations of `InterpretBuiltIn`.
+Rather than writing a wrapper per function, a generic `wrap` adapter is used:
+
+```rust
+builtins.insert("upper",    wrap(|s: String| s.to_uppercase()));
+builtins.insert("add",      wrap(|(a, b): (i64, i64)| a + b));
+builtins.insert("distance", wrap(|p: Point| ((p.x*p.x + p.y*p.y) as f64).sqrt()));
+```
+
+This works through two conversion traits:
+
+- **`FromDataValue`** — extracts a Rust type from a `DataValue`.
+  - Primitives (`i64`, `f64`, `String`, …) match their `DataValue` counterpart.
+  - Rust tuples `(A, B, …)` destructure a `DataValue::List` positionally.
+  - Rust structs implement it by destructuring a `DataValue::Struct` by field name.
+- **`IntoDataValue`** — converts a Rust type back into an `Option<DataValue>`.
+  - `()` maps to `None` (zero-return function).
+  - Everything else wraps to `Some(DataValue::…)`.
+
+The `wrap` function uses the Rust tuple-impl pattern (one blanket impl per arity,
+written once) to produce an `InterpretBuiltIn` from any compatible `Fn`.
+
+### Built-in function availability
+
+Built-in functions are not universally available at all stages of execution.
+Each function belongs to one or more of the following availability classes:
+
+| Class | When it runs | Invoked by |
+|-------|-------------|------------|
+| **Comptime** | During the comptime pass, before any code runs | `@!` |
+| **Runtime** | During normal program execution | `!` |
+| **Both** | Available in either context | `@!` or `!` |
+
+This distinction exists to capture the difference in what is possible at
+comptime versus runtime — not every operation is meaningful or safe in both
+contexts.
 
 ---
 

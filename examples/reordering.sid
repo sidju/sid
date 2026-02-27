@@ -35,6 +35,6 @@
 # using the local labels that will still work.
 
 <
-  "x" 15 local! # becomes nothing
+  x 15 local! # becomes nothing
   x x # becomes 15 15
 >!

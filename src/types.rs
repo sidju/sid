@@ -21,15 +21,30 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use anyhow::Result;
 use crate::type_system::SidType;
 
-pub trait BuiltInFunction: Debug {
-  fn execute(&self,
-    data_stack: &mut Vec<DataValue>,
-    program_stack: &mut Vec<ProgramValue>,
-    local_scope: &mut HashMap<String, DataValue>,
-    global_scope: &mut HashMap<String, DataValue>,
-  );
+pub trait InterpretBuiltIn: Debug {
+  /// Number of arguments popped from the data stack (0 or 1).
+  fn arg_count(&self) -> u8;
+  /// Number of values pushed back onto the data stack (0 or 1).
+  fn return_count(&self) -> u8;
+  fn execute(
+    &self,
+    arg: Option<DataValue>,
+    global_scope: &HashMap<String, DataValue>,
+  ) -> Result<Option<DataValue>>;
+}
+
+/// A built-in function that generates LLVM IR during compilation.
+///
+/// TODO: This trait is a placeholder. Methods for IR generation via the LLVM
+/// backend will be added here when the compile path is further developed.
+/// CompileBuiltIn functions can only be integration-tested against the LLVM
+/// backend; they are not unit-testable with the interpreter alone.
+pub trait CompileBuiltIn: Debug {
+  fn arg_count(&self) -> u8;
+  fn return_count(&self) -> u8;
 }
 
 /// A fully concrete value — the currency of the data stack and scope maps.
@@ -57,7 +72,7 @@ pub enum DataValue {
   Set(Vec<DataValue>),
   Struct(Vec<(String, DataValue)>),
   Map(Vec<(DataValue, DataValue)>),
-  BuiltInFunction(String),
+  BuiltIn(String),
   Type(SidType),
   Label(String),
 }
@@ -84,22 +99,29 @@ impl From<Template> for ProgramValue {
 pub struct Template {
   pub data: TemplateData,
   pub consumes_stack_entries: usize,
+  /// If true, this template is rendered eagerly during the comptime pass.
+  pub comptime: bool,
 }
 impl Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Substack(parsed.0), consumes_stack_entries: parsed.1 }
+    Self { data: TemplateData::Substack(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
   }
   pub fn list(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::List(parsed.0), consumes_stack_entries: parsed.1 }
+    Self { data: TemplateData::List(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
   }
   pub fn set(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1 }
+    Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
   }
   pub fn map(pairs: Vec<(TemplateValue, TemplateValue)>, consumes: usize) -> Self {
-    Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes }
+    Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes, comptime: false }
   }
   pub fn script(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Script(parsed.0), consumes_stack_entries: parsed.1 }
+    Self { data: TemplateData::Script(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
+  }
+  /// Mark this template for eager evaluation during the comptime pass.
+  pub fn mark_comptime(mut self) -> Self {
+    self.comptime = true;
+    self
   }
 }
 

@@ -28,7 +28,14 @@ pub fn parse_parent_access(input: &mut Peekable<Graphemes>) -> Result<TemplateVa
     })
 }
 
-/// Parse a template literal (`(…)`, `[…]`, `{…}`, or `<…>`).
+/// Parse a template literal preceded by `@`, marking it for comptime evaluation.
+///
+/// The iterator must be positioned at the opening delimiter (`(`, `[`, `{`, `<`).
+pub fn parse_comptime_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
+    Ok(parse_template(input)?.mark_comptime())
+}
+
+
 ///
 /// For `{…}` the content is scanned at the first parsing level to decide
 /// whether it is a set or a struct (struct has at least one `:` at depth 0).

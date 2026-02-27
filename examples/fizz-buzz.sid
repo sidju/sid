@@ -8,7 +8,7 @@
 #   (all actions must consume the same number of stack entries)
 # - def (args: name, value)
 #   creates a label with given name and value
-"fizzbuzz" (
+fizzbuzz (
   # Clone the value before the function, since we will consume it for every if
   clone 15 modulo! [
     [0, ("fizzbuzz" print! del)],

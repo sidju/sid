@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 pub fn render_test_fixture(
   template: Template,
-  mut parent_stack: Vec<DataValue>,
+  mut parent_stack: Vec<TemplateValue>,
   parent_scope: HashMap<String, DataValue>,
   global_scope: HashMap<String, DataValue>,
-  expected_parent_stack: Vec<DataValue>,
+  expected_parent_stack: Vec<TemplateValue>,
   expected_rendered_stack: Vec<DataValue>,
 ) {
   let rendered_stack = render_template(
