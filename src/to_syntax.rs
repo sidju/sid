@@ -43,6 +43,7 @@ impl ToSyntax for DataValue {
       DataValue::BuiltIn(v) => v.clone(),
       DataValue::Type(v) => v.to_syntax(),
       DataValue::Label(v) => v.clone(),
+      DataValue::CFunction(f) => format!("<CFunction {}>", f.name),
     }
   }
 }

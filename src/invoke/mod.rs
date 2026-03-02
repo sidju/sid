@@ -6,6 +6,7 @@ use super::{
   TemplateValue,
   InterpretBuiltIn,
   render_template,
+  call_c_function,
 };
 
 pub struct ExeState {
@@ -61,6 +62,35 @@ pub fn invoke<'a>(
       };
       if let Some(result) = builtin.execute(arg, global_scope)
         .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
+      {
+        data_stack.push(TemplateValue::from(result));
+      }
+    },
+    // Invoking a dynamically-loaded C function via libffi.
+    DataValue::CFunction(f) => {
+      let param_count = f.sig.params.len();
+      let arg = if param_count == 0 {
+        None
+      } else if param_count == 1 {
+        match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
+          Some(other) => panic!("CFunction '{}': argument is not a concrete value: {:?}", f.name, other),
+          None => panic!("CFunction '{}': expected argument but stack was empty", f.name),
+        }
+      } else {
+        // Multiple params: expect a List.
+        match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
+            Some(DataValue::List(items)),
+          Some(other) => panic!(
+            "CFunction '{}': expected List for {} params, got {:?}",
+            f.name, param_count, other
+          ),
+          None => panic!("CFunction '{}': expected argument but stack was empty", f.name),
+        }
+      };
+      if let Some(result) = call_c_function(&f, arg)
+        .unwrap_or_else(|e| panic!("CFunction '{}' returned error: {}", f.name, e))
       {
         data_stack.push(TemplateValue::from(result));
       }

@@ -21,8 +21,10 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use anyhow::Result;
 use crate::type_system::SidType;
+use crate::c_ffi::CFunc;
 
 pub trait InterpretBuiltIn: Debug {
   /// Number of arguments popped from the data stack (0 or 1).
@@ -75,6 +77,8 @@ pub enum DataValue {
   BuiltIn(String),
   Type(SidType),
   Label(String),
+  /// A dynamically-loaded C function, callable via libffi.
+  CFunction(Arc<CFunc>),
 }
 
 /// A value on the program stack: either concrete data ready to push, a pending
