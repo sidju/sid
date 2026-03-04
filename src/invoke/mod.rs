@@ -90,7 +90,7 @@ pub fn invoke<'a>(
           None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
         }
       };
-      if let Some(result) = call_cfuncsig(&sig, arg, &mut global_state.libraries)
+      if let Some(result) = call_cfuncsig(&sig, arg, &global_state.libraries)
         .unwrap_or_else(|e| panic!("CFuncSig '{}' call error: {}", sig.name, e))
       {
         data_stack.push(TemplateValue::from(result));

@@ -68,9 +68,12 @@ fn get_sqrt_sig() -> CFuncSig {
 
 #[test]
 fn call_sqrt_returns_correct_value() {
-    let sig = get_sqrt_sig();
+    // c_link_lib must be called first; call_cfuncsig no longer lazy-loads.
     let mut libs = HashMap::new();
-    let result = call_cfuncsig(&sig, Some(DataValue::Float(9.0)), &mut libs)
+    libs.insert(TEST_LIB.to_owned(), sid::c_ffi_open_library(TEST_LIB).expect("open libm"));
+
+    let sig = get_sqrt_sig();
+    let result = call_cfuncsig(&sig, Some(DataValue::Float(9.0)), &libs)
         .expect("call_cfuncsig failed");
     match result {
         Some(DataValue::Float(v)) => {
@@ -78,23 +81,23 @@ fn call_sqrt_returns_correct_value() {
         }
         other => panic!("expected DataValue::Float, got {:?}", other),
     }
-    // Library should now be cached in the map.
-    assert!(libs.contains_key(TEST_LIB));
 }
 
 #[test]
 fn call_with_wrong_arg_count_errors() {
+    let mut libs = HashMap::new();
+    libs.insert(TEST_LIB.to_owned(), sid::c_ffi_open_library(TEST_LIB).expect("open libm"));
     let sig = get_sqrt_sig();
-    let result = call_cfuncsig(&sig, None, &mut HashMap::new());
+    let result = call_cfuncsig(&sig, None, &libs);
     assert!(result.is_err(), "wrong arg count should return Err");
 }
 
 #[test]
-fn error_on_nonexistent_library() {
-    let sigs = parse_c_header(&fixture_header(), "/nonexistent/libxyz.so.999")
-        .expect("parse succeeds regardless of lib path");
-    let result = call_cfuncsig(&sigs[0], None, &mut HashMap::new());
-    assert!(result.is_err(), "should error when library cannot be opened");
+fn error_on_unloaded_library() {
+    // Library NOT pre-loaded — must be a fatal error.
+    let sig = get_sqrt_sig();
+    let result = call_cfuncsig(&sig, Some(DataValue::Float(1.0)), &HashMap::new());
+    assert!(result.is_err(), "should error when library is not loaded");
 }
 
 // ── CFuncSig invoke via interpret ─────────────────────────────────────────────
@@ -104,6 +107,11 @@ fn interpret_cfuncsig_in_global_scope() {
     let sqrt_sig = get_sqrt_sig();
 
     let mut global_state = GlobalState::new();
+    // Pre-load the library so call_cfuncsig doesn't error on missing lib.
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
     global_state.scope.insert("sqrt".to_owned(), DataValue::CFuncSig(sqrt_sig));
 
     let program = vec![ProgramValue::Invoke];
@@ -119,11 +127,33 @@ fn interpret_cfuncsig_in_global_scope() {
 // ── c_load_header builtin tests ───────────────────────────────────────────────
 
 #[test]
-fn c_load_header_returns_struct_of_cfuncsigs() {
+fn c_load_header_str_arg_derives_lib_name() {
     let builtins = get_interpret_builtins();
-    let arg = DataValue::Struct(vec![
-        ("header".to_owned(), DataValue::Str(fixture_header())),
-        ("lib".to_owned(), DataValue::Str(TEST_LIB.to_owned())),
+    // Pass just the path — lib_name should be derived from the filename stem ("test").
+    let result = builtins["c_load_header"]
+        .execute(Some(DataValue::Str(fixture_header())), &mut GlobalState::new())
+        .expect("c_load_header failed");
+
+    match result {
+        Some(DataValue::Struct(fields)) => {
+            let sqrt = fields.iter()
+                .find(|(name, _)| name == "sqrt")
+                .expect("sqrt not found");
+            match &sqrt.1 {
+                DataValue::CFuncSig(s) => assert_eq!(s.lib_name, "test"),
+                other => panic!("expected CFuncSig, got {:?}", other),
+            }
+        }
+        other => panic!("expected Struct, got {:?}", other),
+    }
+}
+
+#[test]
+fn c_load_header_list_arg_uses_explicit_lib_name() {
+    let builtins = get_interpret_builtins();
+    let arg = DataValue::List(vec![
+        DataValue::Str(fixture_header()),
+        DataValue::Str(TEST_LIB.to_owned()),
     ]);
 
     let result = builtins["c_load_header"]
@@ -148,7 +178,7 @@ fn c_load_header_returns_struct_of_cfuncsigs() {
 fn c_load_header_error_on_wrong_arg() {
     let builtins = get_interpret_builtins();
     let result = builtins["c_load_header"]
-        .execute(Some(DataValue::Str("not-a-struct".to_owned())), &mut GlobalState::new());
+        .execute(Some(DataValue::Int(42)), &mut GlobalState::new());
     assert!(result.is_err());
 }
 
@@ -162,6 +192,21 @@ fn c_link_lib_preloads_library() {
         .execute(Some(DataValue::Str(TEST_LIB.to_owned())), &mut state)
         .expect("c_link_lib failed");
     assert!(state.libraries.contains_key(TEST_LIB), "library should be in central store");
+}
+
+#[test]
+fn c_link_lib_list_arg_registers_under_name() {
+    let builtins = get_interpret_builtins();
+    let mut state = GlobalState::new();
+    let arg = DataValue::List(vec![
+        DataValue::Str(TEST_LIB.to_owned()),
+        DataValue::Str("math".to_owned()),
+    ]);
+    builtins["c_link_lib"]
+        .execute(Some(arg), &mut state)
+        .expect("c_link_lib with list failed");
+    assert!(state.libraries.contains_key("math"), "library should be registered under 'math'");
+    assert!(!state.libraries.contains_key(TEST_LIB), "should not be registered under path");
 }
 
 #[test]

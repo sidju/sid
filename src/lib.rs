@@ -4,6 +4,9 @@ pub mod type_system;
 pub use type_system::SidType;
 pub mod c_ffi;
 pub use c_ffi::{CFunc, CFuncSig, CType, parse_c_header, call_c_function, call_cfuncsig};
+/// Expose `open_library` for tests and integration code that needs to
+/// pre-populate the library registry (e.g. after `c_link_lib` changes).
+pub use c_ffi::open_library as c_ffi_open_library;
 mod types;
 pub use types::*;
 pub use types::GlobalState;

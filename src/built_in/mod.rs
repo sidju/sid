@@ -13,12 +13,11 @@ use crate::c_ffi::{parse_c_header, open_library};
 /// each field name is a function name and each value is a `DataValue::CFuncSig`
 /// with `lib_name` already set.
 ///
-/// Argument: `DataValue::Struct([("header", Str(path)), ("lib", Str(soname))])`.
-/// Return:   `DataValue::Struct` of `(fn_name, CFuncSig)` pairs.
+/// Argument: either
+///   - `DataValue::Str(header_path)` — lib_name derived from the header filename stem, or
+///   - `DataValue::List([Str(header_path), Str(lib_name)])` — explicit lib_name override.
 ///
-/// Both the header path and the library name must be provided together so that
-/// `lib_name` is always populated — no separate link step is required before
-/// invoking the returned functions.
+/// Return: `DataValue::Struct` of `(fn_name, CFuncSig)` pairs.
 ///
 /// This builtin is available at **both** comptime and runtime.  Calling it
 /// with `@!` at comptime bakes the type stubs into the compiled output so
@@ -35,23 +34,7 @@ impl InterpretBuiltIn for CLoadHeader {
     arg: Option<DataValue>,
     _global_state: &mut GlobalState,
   ) -> anyhow::Result<Option<DataValue>> {
-    let fields = match arg {
-      Some(DataValue::Struct(f)) => f,
-      other => anyhow::bail!(
-        "c_load_header expects Struct {{header: Str, lib: Str}}, got {:?}", other
-      ),
-    };
-
-    let header_path = fields.iter()
-      .find(|(k, _)| k == "header")
-      .and_then(|(_, v)| if let DataValue::Str(s) = v { Some(s.clone()) } else { None })
-      .ok_or_else(|| anyhow::anyhow!("c_load_header: missing 'header' field (expected Str)"))?;
-
-    let lib_name = fields.iter()
-      .find(|(k, _)| k == "lib")
-      .and_then(|(_, v)| if let DataValue::Str(s) = v { Some(s.clone()) } else { None })
-      .ok_or_else(|| anyhow::anyhow!("c_load_header: missing 'lib' field (expected Str)"))?;
-
+    let (header_path, lib_name) = parse_load_header_arg(arg)?;
     let sigs = parse_c_header(&header_path, &lib_name)?;
     let out_fields: Vec<(String, DataValue)> = sigs
       .into_iter()
@@ -64,17 +47,56 @@ impl InterpretBuiltIn for CLoadHeader {
   }
 }
 
+/// Parse the argument to `c_load_header` and return `(header_path, lib_name)`.
+///
+/// Accepts:
+/// - `Str(path)` — lib_name derived from the filename stem.
+/// - `List([Str(path), Str(lib_name)])` — explicit lib_name override.
+fn parse_load_header_arg(arg: Option<DataValue>) -> anyhow::Result<(String, String)> {
+  match arg {
+    Some(DataValue::Str(path)) => {
+      let lib_name = stem_of(&path)?;
+      Ok((path, lib_name))
+    }
+    Some(DataValue::List(mut items)) if items.len() == 2 => {
+      let path = match items.remove(0) {
+        DataValue::Str(s) => s,
+        other => anyhow::bail!("c_load_header: first list element must be Str (path), got {:?}", other),
+      };
+      let lib_name = match items.remove(0) {
+        DataValue::Str(s) => s,
+        other => anyhow::bail!("c_load_header: second list element must be Str (lib_name), got {:?}", other),
+      };
+      Ok((path, lib_name))
+    }
+    other => anyhow::bail!(
+      "c_load_header expects Str(path) or [Str(path), Str(lib_name)], got {:?}", other
+    ),
+  }
+}
+
+/// Extract the filename stem (no suffix) from a path string.
+fn stem_of(path: &str) -> anyhow::Result<String> {
+  std::path::Path::new(path)
+    .file_stem()
+    .and_then(|s| s.to_str())
+    .map(|s| s.to_owned())
+    .ok_or_else(|| anyhow::anyhow!("c_load_header: could not derive lib_name from path '{}'", path))
+}
+
 // ── c_link_lib ────────────────────────────────────────────────────────────────
 
 /// Built-in that pre-loads a shared library into [`GlobalState::libraries`].
 ///
-/// This is optional: `call_cfuncsig` loads the library lazily on first call.
 /// Use `c_link_lib` to get early error detection (the call fails immediately
-/// if the library cannot be found) or to ensure a library is resident before
-/// time-sensitive code runs.
+/// if the library cannot be found) and to ensure a library is registered under
+/// a stable name before any `CFuncSig` that references it is invoked.
 ///
-/// Argument: `DataValue::Str(lib_path)` — path to (or soname of) the library.
-/// Return:   nothing.
+/// Argument: either
+///   - `DataValue::Str(lib_path)` — load `lib_path`, register under that same path, or
+///   - `DataValue::List([Str(lib_path), Str(lib_name)])` — load `lib_path`, register under `lib_name`.
+///
+/// Return: nothing.
 ///
 /// This builtin is **runtime-only**.
 #[derive(Debug)]
@@ -89,16 +111,35 @@ impl InterpretBuiltIn for CLinkLib {
     arg: Option<DataValue>,
     global_state: &mut GlobalState,
   ) -> anyhow::Result<Option<DataValue>> {
-    let lib_path = match arg {
-      Some(DataValue::Str(p)) => p,
-      other => anyhow::bail!("c_link_lib expects Str (library path), got {:?}", other),
-    };
-
-    if !global_state.libraries.contains_key(lib_path.as_str()) {
+    let (lib_path, lib_name) = parse_link_lib_arg(arg)?;
+    if !global_state.libraries.contains_key(lib_name.as_str()) {
       let lib = open_library(&lib_path)?;
-      global_state.libraries.insert(lib_path, lib);
+      global_state.libraries.insert(lib_name, lib);
     }
     Ok(None)
+  }
+}
+
+/// Parse the argument to `c_link_lib` and return `(lib_path, lib_name)`.
+///
+/// Accepts:
+/// - `Str(path)` — lib_path and lib_name are both the path.
+/// - `List([Str(path), Str(name)])` — load path, register under name.
+fn parse_link_lib_arg(arg: Option<DataValue>) -> anyhow::Result<(String, String)> {
+  match arg {
+    Some(DataValue::Str(path)) => Ok((path.clone(), path)),
+    Some(DataValue::List(mut items)) if items.len() == 2 => {
+      let path = match items.remove(0) {
+        DataValue::Str(s) => s,
+        other => anyhow::bail!("c_link_lib: first list element must be Str (lib_path), got {:?}", other),
+      };
+      let name = match items.remove(0) {
+        DataValue::Str(s) => s,
+        other => anyhow::bail!("c_link_lib: second list element must be Str (lib_name), got {:?}", other),
+      };
+      Ok((path, name))
+    }
+    other => anyhow::bail!("c_link_lib expects Str(lib_path) or [Str(lib_path), Str(lib_name)], got {:?}", other),
   }
 }
 
