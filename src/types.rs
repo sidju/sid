@@ -23,8 +23,37 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use anyhow::Result;
+use libloading::Library;
 use crate::type_system::SidType;
 use crate::c_ffi::{CFunc, CFuncSig};
+
+/// Global interpreter state: variables visible to the whole program plus a
+/// registry of dynamically-loaded C shared libraries.
+///
+/// Splitting these two concerns into a single struct lets builtins like
+/// `c_link_lib` load a library once and record it here, while `call_cfuncsig`
+/// looks up (and lazily loads) the library by name at call time.
+pub struct GlobalState {
+  /// Named values accessible from anywhere in the program.
+  pub scope: HashMap<String, DataValue>,
+  /// Shared libraries loaded by `c_link_lib`, keyed by the path/soname used
+  /// to load them.  Libraries are added on first use and reused thereafter.
+  pub libraries: HashMap<String, Arc<Library>>,
+}
+
+impl GlobalState {
+  pub fn new() -> Self {
+    Self { scope: HashMap::new(), libraries: HashMap::new() }
+  }
+  /// Construct a `GlobalState` with a pre-populated scope and no libraries.
+  pub fn with_scope(scope: HashMap<String, DataValue>) -> Self {
+    Self { scope, libraries: HashMap::new() }
+  }
+}
+
+impl Default for GlobalState {
+  fn default() -> Self { Self::new() }
+}
 
 pub trait InterpretBuiltIn: Debug {
   /// Number of arguments popped from the data stack (0 or 1).
@@ -34,7 +63,7 @@ pub trait InterpretBuiltIn: Debug {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    global_scope: &HashMap<String, DataValue>,
+    global_state: &mut GlobalState,
   ) -> Result<Option<DataValue>>;
 }
 

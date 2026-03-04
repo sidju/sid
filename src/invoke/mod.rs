@@ -4,6 +4,7 @@ use super::{
   ProgramValue,
   DataValue,
   TemplateValue,
+  GlobalState,
   InterpretBuiltIn,
   render_template,
   call_c_function,
@@ -14,7 +15,7 @@ pub struct ExeState {
   pub program_stack: Vec<ProgramValue>,
   pub data_stack: Vec<TemplateValue>,
   pub local_scope: HashMap<String, DataValue>,
-  pub global_scope: HashMap<String, DataValue>,
+  pub global_state: GlobalState,
 }
 
 // Invoking behaves very differently depending on what is invoked
@@ -22,14 +23,14 @@ pub fn invoke<'a>(
   data_stack: &mut Vec<TemplateValue>,
   program_stack: &mut Vec<ProgramValue>,
   local_scope: &mut HashMap<String, DataValue>,
-  global_scope: &mut HashMap<String, DataValue>,
+  global_state: &mut GlobalState,
   builtins: &HashMap<&'a str, &'a dyn InterpretBuiltIn>,
 ) {
   // Resolve labels before invoking
   let value = match data_stack.pop() {
     Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Label(l)))) => {
       if let Some(v) = local_scope.get(&l) { v.clone() }
-      else if let Some(v) = global_scope.get(&l) { v.clone() }
+      else if let Some(v) = global_state.scope.get(&l) { v.clone() }
       else if builtins.contains_key(&l.as_str()) { DataValue::BuiltIn(l) }
       else { panic!("Undefined label dereference: {}", l); }
     },
@@ -61,7 +62,7 @@ pub fn invoke<'a>(
       } else {
         None
       };
-      if let Some(result) = builtin.execute(arg, global_scope)
+      if let Some(result) = builtin.execute(arg, global_state)
         .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
       {
         data_stack.push(TemplateValue::from(result));
@@ -89,7 +90,7 @@ pub fn invoke<'a>(
           None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
         }
       };
-      if let Some(result) = call_cfuncsig(&sig, arg)
+      if let Some(result) = call_cfuncsig(&sig, arg, &mut global_state.libraries)
         .unwrap_or_else(|e| panic!("CFuncSig '{}' call error: {}", sig.name, e))
       {
         data_stack.push(TemplateValue::from(result));
@@ -131,7 +132,7 @@ pub fn invoke<'a>(
 pub fn interpret<'a>(
   program: Vec<ProgramValue>,
   data_stack: Vec<TemplateValue>,
-  global_scope: HashMap<String, DataValue>,
+  global_state: GlobalState,
   builtins: &HashMap<&'a str, &'a dyn InterpretBuiltIn>,
 ) {
   let local_scope = HashMap::new();
@@ -139,7 +140,7 @@ pub fn interpret<'a>(
     program_stack: program,
     data_stack,
     local_scope,
-    global_scope,
+    global_state,
   };
   while !exe_state.program_stack.is_empty() {
     interpret_one(&mut exe_state, builtins)
@@ -159,7 +160,7 @@ pub fn interpret_one<'a>(
         t,
         &mut exe_state.data_stack,
         &exe_state.local_scope,
-        &exe_state.global_scope,
+        &exe_state.global_state.scope,
       );
       exe_state.data_stack.extend(rendered.into_iter().map(TemplateValue::from));
     },
@@ -167,7 +168,7 @@ pub fn interpret_one<'a>(
       &mut exe_state.data_stack,
       &mut exe_state.program_stack,
       &mut exe_state.local_scope,
-      &mut exe_state.global_scope,
+      &mut exe_state.global_state,
       builtins,
     ); },
   }

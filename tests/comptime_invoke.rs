@@ -1,6 +1,6 @@
-use sid::*;
-
 use std::collections::HashMap;
+
+use sid::*;
 
 // ── Mock builtins ────────────────────────────────────────────────────────────
 
@@ -10,7 +10,7 @@ struct MockDouble;
 impl InterpretBuiltIn for MockDouble {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, arg: Option<DataValue>, _scope: &HashMap<String, DataValue>)
+  fn execute(&self, arg: Option<DataValue>, _state: &mut GlobalState)
     -> anyhow::Result<Option<DataValue>>
   {
     match arg {
@@ -26,7 +26,7 @@ struct MockDrop;
 impl InterpretBuiltIn for MockDrop {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 0 }
-  fn execute(&self, _arg: Option<DataValue>, _scope: &HashMap<String, DataValue>)
+  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
     -> anyhow::Result<Option<DataValue>>
   {
     Ok(None)
@@ -39,7 +39,7 @@ struct MockConst;
 impl InterpretBuiltIn for MockConst {
   fn arg_count(&self) -> u8 { 0 }
   fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, _arg: Option<DataValue>, _scope: &HashMap<String, DataValue>)
+  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
     -> anyhow::Result<Option<DataValue>>
   {
     Ok(Some(DataValue::Int(42)))

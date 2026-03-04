@@ -52,18 +52,19 @@ impl CType {
 
 // ── Parsed function signature ─────────────────────────────────────────────────
 
-/// A parsed C function signature: return type, name, and ordered parameter types.
+/// A parsed C function signature: return type, name, ordered parameter types,
+/// and the library that provides it.
 ///
-/// After `c_link_lib` is called the `lib` field holds the shared library that
-/// provides this function.  It is `None` while the signature is still
-/// unlinked (i.e. produced by `c_load_header` but not yet linked).
+/// `lib_name` is always populated at header-load time (by `c_load_header`) so
+/// `call_cfuncsig` can resolve the symbol without any Option checks.
 pub struct CFuncSig {
     pub name: String,
     pub ret: CType,
     /// Parameter types in declaration order.  Unnamed parameters are fine.
     pub params: Vec<CType>,
-    /// Shared-library handle set by `c_link_lib`.  `None` = not yet linked.
-    pub lib: Option<Arc<Library>>,
+    /// Library path / soname used to load this function.  Set once by
+    /// `c_load_header` and never changed afterwards.
+    pub lib_name: String,
 }
 
 impl std::fmt::Debug for CFuncSig {
@@ -72,23 +73,23 @@ impl std::fmt::Debug for CFuncSig {
             .field("name", &self.name)
             .field("ret",  &self.ret)
             .field("params", &self.params)
-            .field("linked", &self.lib.is_some())
+            .field("lib_name", &self.lib_name)
             .finish()
     }
 }
 impl Clone for CFuncSig {
     fn clone(&self) -> Self {
         CFuncSig {
-            name:   self.name.clone(),
-            ret:    self.ret.clone(),
-            params: self.params.clone(),
-            lib:    self.lib.clone(),
+            name:     self.name.clone(),
+            ret:      self.ret.clone(),
+            params:   self.params.clone(),
+            lib_name: self.lib_name.clone(),
         }
     }
 }
-/// Equality ignores the library handle — two signatures with the same name,
-/// return type, and parameter types are considered equal regardless of which
-/// library (if any) they are linked against.
+/// Equality ignores `lib_name` — two signatures with the same name, return
+/// type, and parameter types are considered equal regardless of which library
+/// provides them.
 impl PartialEq for CFuncSig {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -150,24 +151,27 @@ impl Clone for CFunc {
 
 /// Parse a C header file and return all bridgeable function signatures.
 ///
+/// Every returned [`CFuncSig`] has its `lib_name` set to `lib_name` so that
+/// callers can invoke the functions immediately without a separate link step.
+///
 /// The file is processed through the system C preprocessor (`gcc -E` on Linux,
 /// `clang -E` on macOS) so that `#include` guards, macros, and transitive
 /// includes are fully resolved before parsing.  Variadic functions, function
 /// pointers, struct/union/enum/typedef declarations, and any declaration whose
 /// types cannot be bridged are silently skipped.
-pub fn parse_c_header(path: &str) -> Result<Vec<CFuncSig>> {
+pub fn parse_c_header(path: &str, lib_name: &str) -> Result<Vec<CFuncSig>> {
     let config = lang_c::driver::Config::default();
     let parse = lang_c::driver::parse(&config, path)
         .map_err(|e| anyhow::anyhow!("failed to parse '{}': {}", path, e))?;
-    Ok(extract_function_sigs(&parse.unit))
+    Ok(extract_function_sigs(&parse.unit, lib_name))
 }
 
 /// Walk a fully preprocessed translation unit and return bridgeable function
 /// signatures.
-fn extract_function_sigs(unit: &lang_c::ast::TranslationUnit) -> Vec<CFuncSig> {
+fn extract_function_sigs(unit: &lang_c::ast::TranslationUnit, lib_name: &str) -> Vec<CFuncSig> {
     unit.0.iter().filter_map(|ext| {
         if let lang_c::ast::ExternalDeclaration::Declaration(decl) = &ext.node {
-            try_extract_func_sig(&decl.node)
+            try_extract_func_sig(&decl.node, lib_name)
         } else {
             None
         }
@@ -176,7 +180,7 @@ fn extract_function_sigs(unit: &lang_c::ast::TranslationUnit) -> Vec<CFuncSig> {
 
 /// Attempt to extract a bridgeable function signature from a top-level
 /// declaration.  Returns `None` for anything that is not a simple function.
-fn try_extract_func_sig(decl: &lang_c::ast::Declaration) -> Option<CFuncSig> {
+fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Option<CFuncSig> {
     use lang_c::ast::*;
 
     // Work with the first (and usually only) declarator in the declaration.
@@ -214,7 +218,7 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration) -> Option<CFuncSig> {
     let ret = specifiers_to_ctype(&decl.specifiers, has_return_ptr)?;
     let params = extract_params(&func_decl.parameters)?;
 
-    Some(CFuncSig { name, ret, params, lib: None })
+    Some(CFuncSig { name, ret, params, lib_name: lib_name.to_owned() })
 }
 
 /// Extract the parameter types from a function's parameter list.
@@ -361,34 +365,15 @@ fn sid_type_for_typedef(name: &str) -> Option<SidType> {
 
 // ── Dynamic library loading ───────────────────────────────────────────────────
 
-/// Open a shared library and associate it with every signature whose name is
-/// exported by that library.  Unresolved signatures are left with `lib: None`.
-///
-/// Returns a new `Vec<CFuncSig>` with the matching entries updated.
+/// Open a shared library and return it wrapped in an [`Arc`].
 ///
 /// # Safety
 /// Loading native libraries is inherently unsafe.
-pub fn link_sigs_to_lib(lib_path: &str, sigs: &[CFuncSig]) -> Result<Vec<CFuncSig>> {
+pub(crate) fn open_library(lib_path: &str) -> Result<Arc<Library>> {
     // SAFETY: opening a shared library.
     let lib = unsafe { Library::new(lib_path) }
         .map_err(|e| anyhow::anyhow!("failed to load '{}': {}", lib_path, e))?;
-    let lib = Arc::new(lib);
-
-    let mut out: Vec<CFuncSig> = sigs.to_vec();
-    for sig in &mut out {
-        if sig.lib.is_some() {
-            continue; // already linked by a previous c_link_lib call
-        }
-        let sym_name = CString::new(sig.name.as_str()).unwrap();
-        // SAFETY: we only read whether the symbol exists; we do not call it.
-        let found = unsafe {
-            lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()).is_ok()
-        };
-        if found {
-            sig.lib = Some(Arc::clone(&lib));
-        }
-    }
-    Ok(out)
+    Ok(Arc::new(lib))
 }
 
 // ── Calling C functions ───────────────────────────────────────────────────────
@@ -406,28 +391,37 @@ pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<Da
     call_fn_ptr(func.fn_ptr.0, &func.sig, arg)
 }
 
-/// Call a [`CFuncSig`] that has been linked via `c_link_lib`.
+/// Call a [`CFuncSig`] whose `lib_name` was set at header-load time.
 ///
-/// The symbol is looked up by name in the stored library at each call — no
-/// function pointer is cached.
+/// The library is looked up in `libraries` by `sig.lib_name`.  If it is not
+/// yet present it is opened and inserted now (lazy load).
 ///
-/// Returns an error if the signature has not been linked yet.
+/// The symbol is resolved by name at each call — no function pointer is cached.
 ///
 /// # Safety
 /// Calls arbitrary C code.  The caller must supply arguments matching the
 /// declared C types.
-pub fn call_cfuncsig(sig: &CFuncSig, arg: Option<DataValue>) -> Result<Option<DataValue>> {
-    let lib = sig.lib.as_ref().ok_or_else(|| anyhow::anyhow!(
-        "'{}' is an unlinked C function signature — call c_link_lib first",
-        sig.name
-    ))?;
+pub fn call_cfuncsig(
+    sig: &CFuncSig,
+    arg: Option<DataValue>,
+    libraries: &mut std::collections::HashMap<String, Arc<Library>>,
+) -> Result<Option<DataValue>> {
+    // Get the library from the central store, loading it lazily if necessary.
+    let lib = if let Some(lib) = libraries.get(sig.lib_name.as_str()) {
+        Arc::clone(lib)
+    } else {
+        let lib = open_library(&sig.lib_name)?;
+        libraries.insert(sig.lib_name.clone(), Arc::clone(&lib));
+        lib
+    };
+
     let sym_name = CString::new(sig.name.as_str()).unwrap();
     // SAFETY: we read the raw function pointer; it is not called until
     // call_fn_ptr, which builds a correct CIF from the signature.
     let fn_ptr: *const () = unsafe {
         match lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()) {
             Ok(sym) => *sym as *const (),
-            Err(e) => bail!("'{}': symbol not found in linked library: {}", sig.name, e),
+            Err(e) => bail!("'{}': symbol not found in '{}': {}", sig.name, sig.lib_name, e),
         }
     };
     call_fn_ptr(fn_ptr, sig, arg)

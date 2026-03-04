@@ -49,12 +49,13 @@ fn compile(source: &str) -> Program {
 
 fn run(source: &str) {
   let program = compile(source);
+  let global_state = GlobalState::with_scope(program.global_scope);
   let program_stack = vec![ProgramValue::Invoke];
   let runtime_builtins = get_interpret_builtins();
   interpret(
     program_stack,
     program.instructions,
-    program.global_scope,
+    global_state,
     &runtime_builtins,
   );
 }
