@@ -2,8 +2,11 @@
 // (This allows mocking all side effects in one for testing)
 pub mod type_system;
 pub use type_system::SidType;
+pub mod c_ffi;
+pub use c_ffi::{CFunc, CFuncSig, CType, parse_c_header, call_c_function, call_cfuncsig};
 mod types;
 pub use types::*;
+pub use types::GlobalState;
 mod to_syntax;
 pub use to_syntax::*;
 mod parse;

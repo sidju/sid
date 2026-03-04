@@ -53,6 +53,10 @@ pub enum SidType {
     // Function / substack type (`{args: T, ret: T} fn_type!`)
     Fn { args: Box<Self>, ret: Box<Self> },
 
+    // C interop
+    /// `T ptr` — a pointer to a value of type `T`; `SidType::Any` for `void*`
+    Pointer(Box<Self>),
+
     // Special
     /// Accepts any value; equivalent to a top type
     Any,

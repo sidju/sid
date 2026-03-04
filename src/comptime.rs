@@ -5,6 +5,7 @@ use anyhow::{bail, Result};
 use crate::{
   InterpretBuiltIn,
   DataValue,
+  GlobalState,
   ProgramValue,
   Template,
   TemplateData,
@@ -74,7 +75,7 @@ pub fn comptime_pass(
           None
         };
 
-        if let Some(result) = builtin.execute(arg, scope)? {
+        if let Some(result) = builtin.execute(arg, &mut GlobalState::new())? {
           stack.push(TemplateValue::from(result));
         }
       }
