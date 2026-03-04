@@ -64,7 +64,7 @@ pub trait InterpretBuiltIn: Debug {
     &self,
     arg: Option<DataValue>,
     global_state: &mut GlobalState,
-  ) -> Result<Option<DataValue>>;
+  ) -> Result<Vec<DataValue>>;
 }
 
 /// A built-in function that generates LLVM IR during compilation.

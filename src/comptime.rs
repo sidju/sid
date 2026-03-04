@@ -75,7 +75,7 @@ pub fn comptime_pass(
           None
         };
 
-        if let Some(result) = builtin.execute(arg, &mut GlobalState::new())? {
+        for result in builtin.execute(arg, &mut GlobalState::new())? {
           stack.push(TemplateValue::from(result));
         }
       }

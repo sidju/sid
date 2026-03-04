@@ -1,0 +1,42 @@
+# Read a file and print its contents using C standard I/O via the FFI.
+#
+# Parse the stdio header at compile time and bake the CFuncSig values into the
+# compiled output.  lib_name is derived from the filename stem ("stdio").
+# load_scope @! then immediately unpacks the resulting struct into scope, so
+# every function becomes directly addressable as a label.
+
+"/usr/include/stdio.h" c_load_header @!
+load_scope @!
+
+# Link the actual shared library at runtime under the name "stdio" (matching
+# the stem used above).  The list form lets us load libc.so.6 but register it
+# under a different key.
+
+["libc.so.6" "stdio"] c_link_lib !
+
+# Open README.md for reading. fopen returns a FILE* (Pointer).
+"README.md" "r" fopen !
+# clone it, since fgets eats one copy
+clone!
+
+# Allocate a string, this time using malloc
+# Declare the size first and clone it, since malloc eats one copy
+4096 clone!
+# Then alloc, and clone since fgets eats one copy
+malloc! clone!
+
+# fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*, but C
+# arguments are backwards in sid so we have them nearly in order. Just an
+# extra pointer copy to move back
+# Use templating to reorder the stack for fgets
+($1 $4 $3 $2)! 
+fgets !
+
+($1 $2)! # And again for fclose, to keep the fgets retval out of our way
+fclose !
+0 eq! assert! # Check retval from fclose
+0 eq! assert! # Check retval from fgets
+
+# Print the line; puts appends a newline.
+puts !
+0 eq! assert!

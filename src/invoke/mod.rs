@@ -62,7 +62,7 @@ pub fn invoke<'a>(
       } else {
         None
       };
-      if let Some(result) = builtin.execute(arg, global_state)
+      for result in builtin.execute(arg, global_state)
         .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
       {
         data_stack.push(TemplateValue::from(result));

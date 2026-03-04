@@ -130,12 +130,13 @@ fn interpret_cfuncsig_in_global_scope() {
 fn c_load_header_str_arg_derives_lib_name() {
     let builtins = get_interpret_builtins();
     // Pass just the path — lib_name should be derived from the filename stem ("test").
-    let result = builtins["c_load_header"]
+    let mut result = builtins["c_load_header"]
         .execute(Some(DataValue::Str(fixture_header())), &mut GlobalState::new())
         .expect("c_load_header failed");
 
-    match result {
-        Some(DataValue::Struct(fields)) => {
+    assert_eq!(result.len(), 1);
+    match result.remove(0) {
+        DataValue::Struct(fields) => {
             let sqrt = fields.iter()
                 .find(|(name, _)| name == "sqrt")
                 .expect("sqrt not found");
@@ -156,12 +157,13 @@ fn c_load_header_list_arg_uses_explicit_lib_name() {
         DataValue::Str(TEST_LIB.to_owned()),
     ]);
 
-    let result = builtins["c_load_header"]
+    let mut result = builtins["c_load_header"]
         .execute(Some(arg), &mut GlobalState::new())
         .expect("c_load_header failed");
 
-    match result {
-        Some(DataValue::Struct(fields)) => {
+    assert_eq!(result.len(), 1);
+    match result.remove(0) {
+        DataValue::Struct(fields) => {
             let sqrt = fields.iter()
                 .find(|(name, _)| name == "sqrt")
                 .expect("sqrt not found");
@@ -225,13 +227,122 @@ fn c_link_lib_error_on_wrong_arg() {
     assert!(result.is_err());
 }
 
+// ── drop builtin tests ────────────────────────────────────────────────────────
+
+#[test]
+fn drop_discards_value() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["drop"]
+        .execute(Some(DataValue::Int(99)), &mut GlobalState::new())
+        .expect("drop failed");
+    assert!(result.is_empty(), "drop should return nothing");
+}
+
+// ── eq builtin tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn eq_equal_values_returns_true() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["eq"]
+        .execute(Some(DataValue::List(vec![DataValue::Int(3), DataValue::Int(3)])), &mut GlobalState::new())
+        .expect("eq failed");
+    assert_eq!(result, vec![DataValue::Bool(true)]);
+}
+
+#[test]
+fn eq_unequal_values_returns_false() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["eq"]
+        .execute(Some(DataValue::List(vec![DataValue::Int(1), DataValue::Int(2)])), &mut GlobalState::new())
+        .expect("eq failed");
+    assert_eq!(result, vec![DataValue::Bool(false)]);
+}
+
+#[test]
+fn eq_error_on_wrong_arg() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["eq"].execute(Some(DataValue::Int(1)), &mut GlobalState::new());
+    assert!(result.is_err());
+}
+
+// ── assert builtin tests ──────────────────────────────────────────────────────
+
+#[test]
+fn assert_passes_on_true() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["assert"]
+        .execute(Some(DataValue::Bool(true)), &mut GlobalState::new())
+        .expect("assert should not fail on true");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn assert_errors_on_false() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["assert"].execute(Some(DataValue::Bool(false)), &mut GlobalState::new());
+    assert!(result.is_err());
+}
+
+#[test]
+fn assert_error_on_non_bool() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["assert"].execute(Some(DataValue::Int(1)), &mut GlobalState::new());
+    assert!(result.is_err());
+}
+
 // ── c_load_header is comptime-available ───────────────────────────────────────
 
 #[test]
 fn c_load_header_available_at_comptime() {
     let builtins = get_comptime_builtins();
     assert!(builtins.contains_key("c_load_header"), "c_load_header must be a comptime builtin");
+    assert!(builtins.contains_key("load_scope"), "load_scope must be a comptime builtin");
     assert!(!builtins.contains_key("c_link_lib"), "c_link_lib must NOT be a comptime builtin");
+    assert!(!builtins.contains_key("clone"), "clone must NOT be a comptime builtin");
+}
+
+// ── load_scope builtin tests ──────────────────────────────────────────────────
+
+#[test]
+fn load_scope_inserts_struct_fields_into_global_scope() {
+    let builtins = get_interpret_builtins();
+    let mut state = GlobalState::new();
+    let arg = DataValue::Struct(vec![
+        ("sqrt".to_owned(), DataValue::CFuncSig(get_sqrt_sig())),
+        ("answer".to_owned(), DataValue::Int(42)),
+    ]);
+    let result = builtins["load_scope"]
+        .execute(Some(arg), &mut state)
+        .expect("load_scope failed");
+    assert!(result.is_empty(), "load_scope should return nothing");
+    assert!(state.scope.contains_key("sqrt"), "sqrt should be in scope");
+    assert_eq!(state.scope.get("answer"), Some(&DataValue::Int(42)));
+}
+
+#[test]
+fn load_scope_error_on_non_struct() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["load_scope"]
+        .execute(Some(DataValue::Int(1)), &mut GlobalState::new());
+    assert!(result.is_err());
+}
+
+// ── clone builtin tests ───────────────────────────────────────────────────────
+
+#[test]
+fn clone_duplicates_value() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["clone"]
+        .execute(Some(DataValue::Int(7)), &mut GlobalState::new())
+        .expect("clone failed");
+    assert_eq!(result, vec![DataValue::Int(7), DataValue::Int(7)]);
+}
+
+#[test]
+fn clone_error_on_no_value() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["clone"].execute(None, &mut GlobalState::new());
+    assert!(result.is_err());
 }
 
 

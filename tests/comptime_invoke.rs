@@ -11,10 +11,10 @@ impl InterpretBuiltIn for MockDouble {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 1 }
   fn execute(&self, arg: Option<DataValue>, _state: &mut GlobalState)
-    -> anyhow::Result<Option<DataValue>>
+    -> anyhow::Result<Vec<DataValue>>
   {
     match arg {
-      Some(DataValue::Int(n)) => Ok(Some(DataValue::Int(n * 2))),
+      Some(DataValue::Int(n)) => Ok(vec![DataValue::Int(n * 2)]),
       other => anyhow::bail!("MockDouble: expected Int, got {:?}", other),
     }
   }
@@ -27,9 +27,9 @@ impl InterpretBuiltIn for MockDrop {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 0 }
   fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
-    -> anyhow::Result<Option<DataValue>>
+    -> anyhow::Result<Vec<DataValue>>
   {
-    Ok(None)
+    Ok(vec![])
   }
 }
 
@@ -40,9 +40,9 @@ impl InterpretBuiltIn for MockConst {
   fn arg_count(&self) -> u8 { 0 }
   fn return_count(&self) -> u8 { 1 }
   fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
-    -> anyhow::Result<Option<DataValue>>
+    -> anyhow::Result<Vec<DataValue>>
   {
-    Ok(Some(DataValue::Int(42)))
+    Ok(vec![DataValue::Int(42)])
   }
 }
 
