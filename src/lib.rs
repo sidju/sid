@@ -3,7 +3,7 @@
 pub mod type_system;
 pub use type_system::SidType;
 pub mod c_ffi;
-pub use c_ffi::{CFunc, CFuncSig, CType, parse_c_header, load_c_functions, call_c_function};
+pub use c_ffi::{CFunc, CFuncSig, CType, parse_c_header, link_sigs_to_lib, call_c_function, call_cfuncsig};
 mod types;
 pub use types::*;
 mod to_syntax;

@@ -4,7 +4,7 @@
 //! - [`CType`]      — a small enum covering the C primitive types we can bridge
 //! - [`CFuncSig`]   — a parsed C function signature (name + param/return types)
 //! - [`CFunc`]      — a loaded, callable C function (library handle + pointer + sig)
-//! - [`parse_c_header`] — a minimal line-oriented C header parser
+//! - [`parse_c_header`] — parse a C header via the system C preprocessor + lang-c
 //! - [`load_c_functions`] — load a shared library and resolve the supplied symbols
 //! - [`call_c_function`]  — call a [`CFunc`] from a [`DataValue`] argument
 
@@ -15,6 +15,7 @@ use anyhow::{bail, Result};
 use libloading::Library;
 
 use crate::DataValue;
+use crate::type_system::SidType;
 
 // ── C type mapping ────────────────────────────────────────────────────────────
 
@@ -28,53 +29,13 @@ pub enum CType {
     Float,   // C `float`  → DataValue::Float (f64)
     Double,  // C `double` → DataValue::Float (f64)
     CString, // C `char *` → DataValue::Str
-    Pointer, // Any other pointer → DataValue::Int (raw address)
+    /// Represents a C pointer type.  Carries the SID pointee type for display;
+    /// at the ABI level all pointers are the same width.
+    /// `SidType::Any` is used when the pointee type is `void` or unknown.
+    Pointer(SidType),
 }
 
 impl CType {
-    /// Map a C type string (from the header) to a [`CType`].
-    ///
-    /// Qualifiers like `const`, `unsigned`, `restrict` are stripped before
-    /// matching.
-    pub fn from_c_str(raw: &str) -> Option<Self> {
-        // Build a version with qualifiers and pointer characters removed for the
-        // base-type lookup; keep the original to detect pointer types.
-        let has_ptr = raw.contains('*');
-        let s = raw
-            .split_whitespace()
-            .filter(|w| !matches!(
-                *w,
-                "const" | "volatile" | "restrict" | "unsigned" | "signed"
-                | "extern" | "static" | "inline" | "__inline__" | "__restrict__"
-            ))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let s = s.trim().trim_end_matches('*').trim();
-
-        // Special-case char: bare `char` is Int; `char *` is CString.
-        if s == "char" {
-            return if has_ptr { Some(CType::CString) } else { Some(CType::Int) };
-        }
-
-        if has_ptr {
-            return Some(CType::Pointer);
-        }
-
-        match s {
-            "void" => Some(CType::Void),
-            "int" | "short" | "short int" | "long int"
-            | "int32_t" | "int16_t" | "int8_t"
-            | "uint32_t" | "uint16_t" | "uint8_t"
-            | "int64_t" | "uint64_t" => Some(CType::Int),
-            "long" | "long long" | "long long int"
-            | "ssize_t" | "ptrdiff_t" => Some(CType::Long),
-            "size_t" => Some(CType::SizeT),
-            "float" => Some(CType::Float),
-            "double" | "long double" => Some(CType::Double),
-            _ => None, // unknown — caller skips this function
-        }
-    }
-
     /// Map this [`CType`] to the corresponding libffi [`libffi::middle::Type`].
     pub fn to_ffi_type(&self) -> libffi::middle::Type {
         use libffi::middle::Type;
@@ -84,7 +45,7 @@ impl CType {
             CType::Long | CType::SizeT => Type::i64(),
             CType::Float => Type::f32(),
             CType::Double => Type::f64(),
-            CType::CString | CType::Pointer => Type::pointer(),
+            CType::CString | CType::Pointer(_) => Type::pointer(),
         }
     }
 }
@@ -92,12 +53,48 @@ impl CType {
 // ── Parsed function signature ─────────────────────────────────────────────────
 
 /// A parsed C function signature: return type, name, and ordered parameter types.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// After `c_link_lib` is called the `lib` field holds the shared library that
+/// provides this function.  It is `None` while the signature is still
+/// unlinked (i.e. produced by `c_load_header` but not yet linked).
 pub struct CFuncSig {
     pub name: String,
     pub ret: CType,
     /// Parameter types in declaration order.  Unnamed parameters are fine.
     pub params: Vec<CType>,
+    /// Shared-library handle set by `c_link_lib`.  `None` = not yet linked.
+    pub lib: Option<Arc<Library>>,
+}
+
+impl std::fmt::Debug for CFuncSig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CFuncSig")
+            .field("name", &self.name)
+            .field("ret",  &self.ret)
+            .field("params", &self.params)
+            .field("linked", &self.lib.is_some())
+            .finish()
+    }
+}
+impl Clone for CFuncSig {
+    fn clone(&self) -> Self {
+        CFuncSig {
+            name:   self.name.clone(),
+            ret:    self.ret.clone(),
+            params: self.params.clone(),
+            lib:    self.lib.clone(),
+        }
+    }
+}
+/// Equality ignores the library handle — two signatures with the same name,
+/// return type, and parameter types are considered equal regardless of which
+/// library (if any) they are linked against.
+impl PartialEq for CFuncSig {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.ret == other.ret
+            && self.params == other.params
+    }
 }
 
 // ── Loaded C function ─────────────────────────────────────────────────────────
@@ -149,161 +146,117 @@ impl Clone for CFunc {
     }
 }
 
-// ── C header parsing ──────────────────────────────────────────────────────────
+// ── C header parsing via system preprocessor + lang-c ────────────────────────
 
 /// Parse a C header file and return all bridgeable function signatures.
 ///
-/// The parser is intentionally minimal:
-/// - preprocessor directives are discarded
-/// - block and line comments are stripped
-/// - only top-level `return_type name ( params ) ;` forms are recognised
-/// - unknown / complex types (function pointers, arrays, variadic) are silently
-///   skipped
+/// The file is processed through the system C preprocessor (`gcc -E` on Linux,
+/// `clang -E` on macOS) so that `#include` guards, macros, and transitive
+/// includes are fully resolved before parsing.  Variadic functions, function
+/// pointers, struct/union/enum/typedef declarations, and any declaration whose
+/// types cannot be bridged are silently skipped.
 pub fn parse_c_header(path: &str) -> Result<Vec<CFuncSig>> {
-    let content = std::fs::read_to_string(path)?;
-    let clean = strip_comments_and_directives(&content);
-    let decls = split_declarations(&clean);
-    let mut sigs = Vec::new();
-    for decl in decls {
-        if let Some(sig) = try_parse_func_decl(decl.trim()) {
-            sigs.push(sig);
+    let config = lang_c::driver::Config::default();
+    let parse = lang_c::driver::parse(&config, path)
+        .map_err(|e| anyhow::anyhow!("failed to parse '{}': {}", path, e))?;
+    Ok(extract_function_sigs(&parse.unit))
+}
+
+/// Walk a fully preprocessed translation unit and return bridgeable function
+/// signatures.
+fn extract_function_sigs(unit: &lang_c::ast::TranslationUnit) -> Vec<CFuncSig> {
+    unit.0.iter().filter_map(|ext| {
+        if let lang_c::ast::ExternalDeclaration::Declaration(decl) = &ext.node {
+            try_extract_func_sig(&decl.node)
+        } else {
+            None
         }
+    }).collect()
+}
+
+/// Attempt to extract a bridgeable function signature from a top-level
+/// declaration.  Returns `None` for anything that is not a simple function.
+fn try_extract_func_sig(decl: &lang_c::ast::Declaration) -> Option<CFuncSig> {
+    use lang_c::ast::*;
+
+    // Work with the first (and usually only) declarator in the declaration.
+    let init_decl = decl.declarators.first()?;
+    let declarator = &init_decl.node.declarator.node;
+
+    // Only plain identifiers are function names we can bridge; skip nested
+    // declarators like pointer-to-function `(*fn_ptr)(…)`.
+    let name = match &declarator.kind.node {
+        DeclaratorKind::Identifier(id) => id.node.name.clone(),
+        _ => return None,
+    };
+
+    // The innermost derived declarator must be a function call; otherwise this
+    // is a variable, array, or pointer declaration.
+    let func_decl = match declarator.derived.first() {
+        Some(d) => match &d.node {
+            DerivedDeclarator::Function(f) => &f.node,
+            _ => return None,
+        },
+        None => return None,
+    };
+
+    // Skip variadic functions — we cannot bridge them safely.
+    if func_decl.ellipsis == Ellipsis::Some {
+        return None;
     }
-    Ok(sigs)
+
+    // Any Pointer derived declarators that appear *after* (outer than) the
+    // Function entry indicate a pointer return type.
+    let has_return_ptr = declarator.derived[1..].iter().any(|d| {
+        matches!(&d.node, DerivedDeclarator::Pointer(_))
+    });
+
+    let ret = specifiers_to_ctype(&decl.specifiers, has_return_ptr)?;
+    let params = extract_params(&func_decl.parameters)?;
+
+    Some(CFuncSig { name, ret, params, lib: None })
 }
 
-/// Remove `//` line comments, `/* */` block comments, and `#` preprocessor
-/// directives from a C source string.
-fn strip_comments_and_directives(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    let mut chars = src.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            // Preprocessor directive: skip to end-of-line
-            '#' => {
-                while let Some(&c) = chars.peek() {
-                    chars.next();
-                    if c == '\n' {
-                        break;
-                    }
-                }
-                out.push('\n');
-            }
-            '/' => match chars.peek() {
-                Some(&'/') => {
-                    // Line comment
-                    chars.next();
-                    while let Some(&c) = chars.peek() {
-                        chars.next();
-                        if c == '\n' {
-                            break;
-                        }
-                    }
-                    out.push('\n');
-                }
-                Some(&'*') => {
-                    // Block comment
-                    chars.next(); // consume '*'
-                    loop {
-                        match chars.next() {
-                            None => break,
-                            Some('*') if chars.peek() == Some(&'/') => {
-                                chars.next();
-                                break;
-                            }
-                            Some('\n') => out.push('\n'),
-                            _ => {}
-                        }
-                    }
-                }
-                _ => out.push('/'),
-            },
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Split the pre-cleaned source into individual declarations using `;`.
-fn split_declarations(src: &str) -> Vec<&str> {
-    src.split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// Try to interpret `decl` as a C function declaration.
+/// Extract the parameter types from a function's parameter list.
 ///
-/// Returns `None` for anything that is not a recognisable function signature.
-fn try_parse_func_decl(decl: &str) -> Option<CFuncSig> {
-    // Must contain '(' and ')' to be a function declaration.
-    if !decl.contains('(') || !decl.contains(')') {
-        return None;
-    }
-    // Skip clearly non-function forms.
-    for skip in &["typedef", "struct", "union", "enum", "=", "{", "(*"] {
-        if decl.contains(skip) {
-            return None;
-        }
-    }
-    if decl.contains("__attribute__") || decl.contains("__declspec") {
-        return None;
-    }
+/// Returns `None` if any parameter type cannot be bridged.
+fn extract_params(
+    params: &[lang_c::span::Node<lang_c::ast::ParameterDeclaration>],
+) -> Option<Vec<CType>> {
+    use lang_c::ast::*;
 
-    // Find the first `(` — everything before is `return_type function_name`.
-    let open = decl.find('(')?;
-    let close = decl.rfind(')')?;
-    if close <= open {
-        return None;
-    }
-
-    let before_paren = decl[..open].trim();
-    let params_str = &decl[open + 1..close];
-
-    // Function name: last identifier in before_paren.
-    let name = before_paren
-        .split(|c: char| !c.is_alphanumeric() && c != '_')
-        .filter(|s| !s.is_empty())
-        .last()?
-        .to_owned();
-
-    // Return type: everything before the name in before_paren.
-    let name_start = before_paren.rfind(&name[..])?;
-    let ret_str = before_paren[..name_start].trim();
-    // Return type must be non-empty for a valid declaration.
-    if ret_str.is_empty() {
-        return None;
-    }
-    let ret = CType::from_c_str(ret_str)?;
-
-    // Parse the parameter list.
-    let params = parse_param_list(params_str)?;
-
-    Some(CFuncSig { name, ret, params })
-}
-
-/// Parse a comma-separated C parameter list into a list of [`CType`]s.
-///
-/// Returns `None` if any parameter type is unknown or the list is malformed.
-fn parse_param_list(params: &str) -> Option<Vec<CType>> {
-    let params = params.trim();
-    if params.is_empty() || params == "void" {
+    if params.is_empty() {
         return Some(vec![]);
     }
-    // Skip variadic functions.
-    if params.contains("...") {
-        return None;
+
+    // A single `void` parameter means the function takes no arguments.
+    if params.len() == 1 {
+        let p = &params[0].node;
+        let is_void_only = p.declarator.is_none()
+            && p.specifiers.iter().any(|s| {
+                matches!(
+                    &s.node,
+                    DeclarationSpecifier::TypeSpecifier(ts)
+                    if matches!(ts.node, TypeSpecifier::Void)
+                )
+            });
+        if is_void_only {
+            return Some(vec![]);
+        }
     }
 
     let mut result = Vec::new();
-    for param in params.split(',') {
-        let param = param.trim();
-        if param.is_empty() {
-            continue;
-        }
-        let type_str = strip_param_name(param);
-        let ctype = CType::from_c_str(type_str)?;
+    for param_node in params {
+        let param = &param_node.node;
+
+        // Is there a pointer in the parameter's declarator?
+        let has_ptr = param.declarator.as_ref().map(|d| {
+            d.node.derived.iter().any(|der| {
+                matches!(&der.node, DerivedDeclarator::Pointer(_))
+            })
+        }).unwrap_or(false);
+
+        let ctype = specifiers_to_ctype(&param.specifiers, has_ptr)?;
         if ctype != CType::Void {
             result.push(ctype);
         }
@@ -311,69 +264,136 @@ fn parse_param_list(params: &str) -> Option<Vec<CType>> {
     Some(result)
 }
 
-/// Remove the parameter name from a C parameter declaration, leaving the type.
-fn strip_param_name(param: &str) -> &str {
-    let type_keywords = [
-        "void", "char", "int", "short", "long", "float", "double",
-        "unsigned", "signed", "const", "volatile", "restrict",
-        "size_t", "ssize_t", "ptrdiff_t",
-        "int8_t", "int16_t", "int32_t", "int64_t",
-        "uint8_t", "uint16_t", "uint32_t", "uint64_t",
-    ];
-    let tokens: Vec<&str> = param.split_whitespace().collect();
-    if tokens.len() <= 1 {
-        return param;
+/// Map a set of C declaration specifiers (plus a pointer flag) to a [`CType`].
+///
+/// Returns `None` if the type combination cannot be bridged.
+fn specifiers_to_ctype(
+    specs: &[lang_c::span::Node<lang_c::ast::DeclarationSpecifier>],
+    has_ptr: bool,
+) -> Option<CType> {
+    use lang_c::ast::{DeclarationSpecifier, TypeSpecifier};
+
+    // Collect just the TypeSpecifier variants; ignore qualifiers, storage class, etc.
+    let type_specs: Vec<&TypeSpecifier> = specs.iter().filter_map(|s| {
+        if let DeclarationSpecifier::TypeSpecifier(ts) = &s.node {
+            Some(&ts.node)
+        } else {
+            None
+        }
+    }).collect();
+
+    let has_char   = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Char));
+    let has_void   = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Void));
+    let has_float  = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Float));
+    let has_double = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Double));
+    let has_short  = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Short));
+    let has_int    = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Int));
+    let long_count = type_specs.iter().filter(|s| matches!(s, TypeSpecifier::Long)).count();
+
+    // `char *` → CString; bare `char` → Int.
+    if has_char {
+        return if has_ptr { Some(CType::CString) } else { Some(CType::Int) };
     }
-    let last = tokens[tokens.len() - 1];
-    // Strip any leading `*` from `last` to isolate the identifier part.
-    // This handles both `name` and `*name` (pointer-to-named-param) forms.
-    let ident = last.trim_start_matches('*');
-    let ident_clean = ident.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
-    if !ident_clean.is_empty() && !type_keywords.contains(&ident_clean) {
-        // The identifier portion is a parameter name — strip it.
-        param[..param.len() - ident_clean.len()].trim()
-    } else {
-        param
+
+    // Any other pointer — determine the pointee SidType for display.
+    if has_ptr {
+        let pointee = if has_void {
+            SidType::Any
+        } else if has_double || has_float {
+            SidType::Float
+        } else if has_int || has_short || long_count > 0 {
+            SidType::Int
+        } else {
+            // Typedef or unknown base type — fall back to Any
+            typedef_name(&type_specs)
+                .and_then(sid_type_for_typedef)
+                .unwrap_or(SidType::Any)
+        };
+        return Some(CType::Pointer(pointee));
+    }
+
+    // Non-pointer primitive types.
+    if has_void   { return Some(CType::Void); }
+    if has_double { return Some(CType::Double); }
+    if has_float  { return Some(CType::Float); }
+    if long_count >= 2                     { return Some(CType::Long); } // long long
+    if long_count == 1 && !has_int         { return Some(CType::Long); } // bare long
+    if has_int || has_short || long_count > 0 { return Some(CType::Int); }
+
+    // Typedef names: size_t, int32_t, etc.
+    if let Some(name) = typedef_name(&type_specs) {
+        return match name {
+            "size_t" => Some(CType::SizeT),
+            "ssize_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t"
+            | "intptr_t" | "uintptr_t" => Some(CType::Long),
+            "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
+            | "int8_t"  | "int16_t"  | "int32_t"  | "int64_t"
+            | "off_t" | "pid_t" | "uid_t" | "gid_t" | "mode_t"
+            | "dev_t" | "ino_t" | "nlink_t" | "socklen_t" => Some(CType::Int),
+            _ => None,
+        };
+    }
+
+    None // unknown type — caller skips this function
+}
+
+/// Extract the typedef name from a list of type specifiers, if present.
+fn typedef_name<'a>(specs: &[&'a lang_c::ast::TypeSpecifier]) -> Option<&'a str> {
+    specs.iter().find_map(|s| {
+        if let lang_c::ast::TypeSpecifier::TypedefName(name) = s {
+            Some(name.node.name.as_str())
+        } else {
+            None
+        }
+    })
+}
+
+/// Map a known C typedef name to its SID pointee type.
+fn sid_type_for_typedef(name: &str) -> Option<SidType> {
+    match name {
+        "size_t" | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
+        | "int8_t" | "int16_t" | "int32_t" | "int64_t"
+        | "ssize_t" | "ptrdiff_t" | "intptr_t" | "uintptr_t"
+        | "off_t" | "pid_t" | "uid_t" | "gid_t" => Some(SidType::Int),
+        _ => None,
     }
 }
 
 // ── Dynamic library loading ───────────────────────────────────────────────────
 
-/// Load a shared library from `lib_path` and resolve every function listed in
-/// `sigs`.  Symbols not found in the library are silently skipped.
+/// Open a shared library and associate it with every signature whose name is
+/// exported by that library.  Unresolved signatures are left with `lib: None`.
+///
+/// Returns a new `Vec<CFuncSig>` with the matching entries updated.
 ///
 /// # Safety
-/// Loading and calling native libraries is inherently unsafe.
-pub fn load_c_functions(lib_path: &str, sigs: &[CFuncSig]) -> Result<Vec<CFunc>> {
-    // SAFETY: we're opening an existing shared library by path.
+/// Loading native libraries is inherently unsafe.
+pub fn link_sigs_to_lib(lib_path: &str, sigs: &[CFuncSig]) -> Result<Vec<CFuncSig>> {
+    // SAFETY: opening a shared library.
     let lib = unsafe { Library::new(lib_path) }
         .map_err(|e| anyhow::anyhow!("failed to load '{}': {}", lib_path, e))?;
     let lib = Arc::new(lib);
 
-    let mut funcs = Vec::new();
-    for sig in sigs {
+    let mut out: Vec<CFuncSig> = sigs.to_vec();
+    for sig in &mut out {
+        if sig.lib.is_some() {
+            continue; // already linked by a previous c_link_lib call
+        }
         let sym_name = CString::new(sig.name.as_str()).unwrap();
-        let fn_ptr: *const () = unsafe {
-            // SAFETY: we're reading the function pointer value from the library;
-            // we don't dereference it here.
-            match lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()) {
-                Ok(sym) => *sym as *const (),
-                Err(_) => continue, // symbol absent — skip
-            }
+        // SAFETY: we only read whether the symbol exists; we do not call it.
+        let found = unsafe {
+            lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()).is_ok()
         };
-        funcs.push(CFunc {
-            _lib: Arc::clone(&lib),
-            name: sig.name.clone(),
-            fn_ptr: FnPtr(fn_ptr),
-            sig: sig.clone(),
-        });
+        if found {
+            sig.lib = Some(Arc::clone(&lib));
+        }
     }
-    Ok(funcs)
+    Ok(out)
 }
 
-// ── Calling a loaded C function ───────────────────────────────────────────────
+// ── Calling C functions ───────────────────────────────────────────────────────
 
-/// Call `func` with the given `arg`.
+/// Call `func` (a pre-loaded [`CFunc`]) with the given `arg`.
 ///
 /// - 0-param functions: pass `None`.
 /// - 1-param functions: pass the single [`DataValue`].
@@ -383,9 +403,46 @@ pub fn load_c_functions(lib_path: &str, sigs: &[CFuncSig]) -> Result<Vec<CFunc>>
 /// Calls arbitrary C code.  The caller must supply arguments matching the
 /// declared C types.
 pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<DataValue>> {
+    call_fn_ptr(func.fn_ptr.0, &func.sig, arg)
+}
+
+/// Call a [`CFuncSig`] that has been linked via `c_link_lib`.
+///
+/// The symbol is looked up by name in the stored library at each call — no
+/// function pointer is cached.
+///
+/// Returns an error if the signature has not been linked yet.
+///
+/// # Safety
+/// Calls arbitrary C code.  The caller must supply arguments matching the
+/// declared C types.
+pub fn call_cfuncsig(sig: &CFuncSig, arg: Option<DataValue>) -> Result<Option<DataValue>> {
+    let lib = sig.lib.as_ref().ok_or_else(|| anyhow::anyhow!(
+        "'{}' is an unlinked C function signature — call c_link_lib first",
+        sig.name
+    ))?;
+    let sym_name = CString::new(sig.name.as_str()).unwrap();
+    // SAFETY: we read the raw function pointer; it is not called until
+    // call_fn_ptr, which builds a correct CIF from the signature.
+    let fn_ptr: *const () = unsafe {
+        match lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()) {
+            Ok(sym) => *sym as *const (),
+            Err(e) => bail!("'{}': symbol not found in linked library: {}", sig.name, e),
+        }
+    };
+    call_fn_ptr(fn_ptr, sig, arg)
+}
+
+/// Core call implementation: marshal `arg` according to `sig`, invoke via
+/// libffi, and unmarshal the return value.
+fn call_fn_ptr(
+    fn_ptr: *const (),
+    sig: &CFuncSig,
+    arg: Option<DataValue>,
+) -> Result<Option<DataValue>> {
     use libffi::middle::{Cif, CodePtr};
 
-    let params = &func.sig.params;
+    let params = &sig.params;
 
     // Collect DataValue arguments.
     let arg_values: Vec<DataValue> = match (params.len(), arg) {
@@ -393,8 +450,8 @@ pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<Da
         (1, Some(v)) => vec![v],
         (n, Some(DataValue::List(items))) if items.len() == n => items,
         (n, _) => bail!(
-            "CFunction '{}': expected {} argument(s)",
-            func.name, n
+            "'{}': expected {} argument(s)",
+            sig.name, n
         ),
     };
 
@@ -420,19 +477,22 @@ pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<Da
             (DataValue::Float(f), CType::Double) => StoredArg::F64(*f),
             (DataValue::Str(s), CType::CString) => {
                 let cs = CString::new(s.as_str()).map_err(|_| anyhow::anyhow!(
-                    "CFunction '{}': string argument contains interior NUL byte",
-                    func.name
+                    "'{}': string argument contains interior NUL byte",
+                    sig.name
                 ))?;
                 let ptr = cs.as_ptr();
                 StoredArg::CStr(cs, ptr)
             }
-            (DataValue::Int(n), CType::Pointer) => {
+            // Accept both a raw integer address and a typed Pointer value.
+            (DataValue::Int(n), CType::Pointer(_)) => {
                 StoredArg::Ptr(*n as usize as *const std::ffi::c_void)
             }
+            (DataValue::Pointer { addr, .. }, CType::Pointer(_)) => {
+                StoredArg::Ptr(*addr as *const std::ffi::c_void)
+            }
             _ => bail!(
-                "CFunction '{}': argument type mismatch \
-                 (value {:?} vs expected C type {:?})",
-                func.name, val, ctype
+                "'{}': argument type mismatch (value {:?} vs expected C type {:?})",
+                sig.name, val, ctype
             ),
         };
         stored.push(s);
@@ -458,11 +518,11 @@ pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<Da
         ffi_args.push(a);
     }
 
-    let cif = Cif::new(ffi_arg_types, func.sig.ret.to_ffi_type());
-    let code_ptr = CodePtr(func.fn_ptr.0 as *mut _);
+    let cif = Cif::new(ffi_arg_types, sig.ret.to_ffi_type());
+    let code_ptr = CodePtr(fn_ptr as *mut _);
 
     // SAFETY: We built the CIF to match the declared C signature.
-    let result = match &func.sig.ret {
+    let result = match &sig.ret {
         CType::Void => {
             unsafe { cif.call::<()>(code_ptr, &ffi_args) };
             None
@@ -494,9 +554,16 @@ pub fn call_c_function(func: &CFunc, arg: Option<DataValue>) -> Result<Option<Da
                 Some(DataValue::Str(s))
             }
         }
-        CType::Pointer => {
+        CType::Pointer(pointee_ty) => {
             let ptr: *mut std::ffi::c_void = unsafe { cif.call(code_ptr, &ffi_args) };
-            Some(DataValue::Int(ptr as i64))
+            if ptr.is_null() {
+                None
+            } else {
+                Some(DataValue::Pointer {
+                    addr: ptr as usize,
+                    pointee_ty: pointee_ty.clone(),
+                })
+            }
         }
     };
 

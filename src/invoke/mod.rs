@@ -7,6 +7,7 @@ use super::{
   InterpretBuiltIn,
   render_template,
   call_c_function,
+  call_cfuncsig,
 };
 
 pub struct ExeState {
@@ -62,6 +63,34 @@ pub fn invoke<'a>(
       };
       if let Some(result) = builtin.execute(arg, global_scope)
         .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
+      {
+        data_stack.push(TemplateValue::from(result));
+      }
+    },
+    // Invoking a linked CFuncSig: look up the symbol by name at call time.
+    DataValue::CFuncSig(sig) => {
+      let param_count = sig.params.len();
+      let arg = if param_count == 0 {
+        None
+      } else if param_count == 1 {
+        match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
+          Some(other) => panic!("CFuncSig '{}': argument is not a concrete value: {:?}", sig.name, other),
+          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
+        }
+      } else {
+        match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
+            Some(DataValue::List(items)),
+          Some(other) => panic!(
+            "CFuncSig '{}': expected List for {} params, got {:?}",
+            sig.name, param_count, other
+          ),
+          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
+        }
+      };
+      if let Some(result) = call_cfuncsig(&sig, arg)
+        .unwrap_or_else(|e| panic!("CFuncSig '{}' call error: {}", sig.name, e))
       {
         data_stack.push(TemplateValue::from(result));
       }

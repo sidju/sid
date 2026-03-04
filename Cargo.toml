@@ -10,6 +10,7 @@ llvm = ["inkwell"]
 clap = { version = "4.5.9", features = ["derive"] }
 unicode-segmentation = "1.11.0"
 anyhow = "1"
+lang-c = "0.15.1"
 libloading = "0.9.0"
 libffi = "5.1.0"
 

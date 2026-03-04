@@ -24,7 +24,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use anyhow::Result;
 use crate::type_system::SidType;
-use crate::c_ffi::CFunc;
+use crate::c_ffi::{CFunc, CFuncSig};
 
 pub trait InterpretBuiltIn: Debug {
   /// Number of arguments popped from the data stack (0 or 1).
@@ -79,6 +79,13 @@ pub enum DataValue {
   Label(String),
   /// A dynamically-loaded C function, callable via libffi.
   CFunction(Arc<CFunc>),
+  /// A raw C pointer returned from a C function call.
+  /// The `pointee_ty` records the declared pointee type; `SidType::Any` for `void*`.
+  Pointer { addr: usize, pointee_ty: SidType },
+  /// A C function signature parsed from a header file.
+  /// Stored in scope under the function's name by `c_load_header`.
+  /// Replaced with `CFunction` when `c_link_lib` resolves it against a library.
+  CFuncSig(CFuncSig),
 }
 
 /// A value on the program stack: either concrete data ready to push, a pending

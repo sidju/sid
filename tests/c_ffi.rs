@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use sid::*;
 
@@ -42,7 +41,6 @@ fn skips_variadic_functions() {
 #[test]
 fn skips_struct_and_typedef_declarations() {
     let sigs = parse_c_header(&fixture_header()).expect("parse_c_header failed");
-    // Neither "Foo" nor "MyInt" should appear as a function name.
     for sig in &sigs {
         assert_ne!(sig.name, "Foo", "struct should be skipped");
         assert_ne!(sig.name, "MyInt", "typedef should be skipped");
@@ -55,46 +53,45 @@ fn error_on_nonexistent_header() {
     assert!(result.is_err(), "should error on missing file");
 }
 
-// ── Library loading tests ─────────────────────────────────────────────────────
+// ── link_sigs_to_lib tests ────────────────────────────────────────────────────
 
 #[test]
-fn loads_sqrt_from_libm() {
+fn links_sqrt_from_libm() {
     let sigs = parse_c_header(&fixture_header()).expect("parse_c_header failed");
-    let funcs = load_c_functions("libm.so.6", &sigs).expect("load_c_functions failed");
-    assert!(
-        funcs.iter().any(|f| f.name == "sqrt"),
-        "sqrt should be present in libm"
-    );
+    let linked = link_sigs_to_lib("libm.so.6", &sigs).expect("link_sigs_to_lib failed");
+    let sqrt = linked.iter().find(|s| s.name == "sqrt").expect("sqrt not found");
+    assert!(sqrt.lib.is_some(), "sqrt should be linked to libm");
 }
 
 #[test]
-fn load_skips_missing_symbols() {
-    let sigs = vec![
-        CFuncSig { name: "this_function_does_not_exist_xyz".to_owned(), ret: CType::Int, params: vec![] },
-    ];
-    let funcs = load_c_functions("libm.so.6", &sigs).expect("load_c_functions failed");
-    assert!(funcs.is_empty(), "missing symbols should be silently skipped");
+fn unresolved_symbols_left_unlinked() {
+    let sigs = vec![CFuncSig {
+        name: "this_function_does_not_exist_xyz".to_owned(),
+        ret: CType::Int, params: vec![], lib: None,
+    }];
+    let linked = link_sigs_to_lib("libm.so.6", &sigs).expect("link_sigs_to_lib failed");
+    assert!(linked[0].lib.is_none(), "missing symbols should remain unlinked");
 }
 
 #[test]
 fn error_on_nonexistent_library() {
-    let result = load_c_functions("/nonexistent/libxyz.so.999", &[]);
+    let result = link_sigs_to_lib("/nonexistent/libxyz.so.999", &[]);
     assert!(result.is_err(), "should error on missing library");
 }
 
-// ── call_c_function tests ─────────────────────────────────────────────────────
+// ── call_cfuncsig tests ───────────────────────────────────────────────────────
 
-fn get_sqrt_func() -> CFunc {
+fn get_linked_sqrt() -> CFuncSig {
     let sigs = parse_c_header(&fixture_header()).expect("parse_c_header failed");
-    let funcs = load_c_functions("libm.so.6", &sigs).expect("load_c_functions failed");
-    funcs.into_iter().find(|f| f.name == "sqrt").expect("sqrt not found in libm")
+    let linked = link_sigs_to_lib("libm.so.6", &sigs).expect("link_sigs_to_lib failed");
+    linked.into_iter().find(|s| s.name == "sqrt").expect("sqrt not found in libm")
 }
 
 #[test]
 fn call_sqrt_returns_correct_value() {
-    let sqrt_fn = get_sqrt_func();
-    let result = call_c_function(&sqrt_fn, Some(DataValue::Float(9.0)))
-        .expect("call_c_function failed");
+    let sqrt_sig = get_linked_sqrt();
+    let result = call_cfuncsig(&sqrt_sig, Some(DataValue::Float(9.0)))
+        .expect("call_cfuncsig failed");
     match result {
         Some(DataValue::Float(v)) => {
             assert!((v - 3.0).abs() < 1e-9, "sqrt(9.0) should be ~3.0, got {}", v);
@@ -105,23 +102,31 @@ fn call_sqrt_returns_correct_value() {
 
 #[test]
 fn call_with_wrong_arg_count_errors() {
-    let sqrt_fn = get_sqrt_func();
+    let sqrt_sig = get_linked_sqrt();
     // sqrt takes 1 param; pass nothing.
-    let result = call_c_function(&sqrt_fn, None);
+    let result = call_cfuncsig(&sqrt_sig, None);
     assert!(result.is_err(), "wrong arg count should return Err");
 }
 
-// ── CFunction invoke via interpret ────────────────────────────────────────────
+#[test]
+fn call_unlinked_sig_errors() {
+    let sigs = parse_c_header(&fixture_header()).expect("parse_c_header failed");
+    let unlinked = sigs.into_iter().find(|s| s.name == "sqrt").expect("sqrt not in header");
+    assert!(unlinked.lib.is_none());
+    let result = call_cfuncsig(&unlinked, Some(DataValue::Float(4.0)));
+    assert!(result.is_err(), "calling unlinked CFuncSig should return Err");
+}
+
+// ── CFuncSig invoke via interpret ─────────────────────────────────────────────
 
 #[test]
-fn interpret_cfunction_in_global_scope() {
-    let sqrt_fn = get_sqrt_func();
+fn interpret_cfuncsig_in_global_scope() {
+    let sqrt_sig = get_linked_sqrt();
 
-    // Put the CFunction in global scope under the name "sqrt".
+    // Place the linked CFuncSig in global scope under its name.
     let mut global_scope: HashMap<String, DataValue> = HashMap::new();
-    global_scope.insert("sqrt".to_owned(), DataValue::CFunction(Arc::new(sqrt_fn)));
+    global_scope.insert("sqrt".to_owned(), DataValue::CFuncSig(sqrt_sig));
 
-    // Program: push 16.0, resolve label "sqrt", invoke.
     let program = vec![ProgramValue::Invoke];
     let data_stack = vec![
         DataValue::Float(16.0).into(),
@@ -129,43 +134,89 @@ fn interpret_cfunction_in_global_scope() {
     ];
     let builtins = get_interpret_builtins();
 
+    // If this panics the test fails; if it returns we know the call succeeded.
     interpret(program, data_stack, global_scope, &builtins);
-    // If we get here without panicking, the call succeeded.
-    // The result (4.0) was pushed onto the stack but we can't inspect it
-    // from outside `interpret`. A panicking test would fail above.
 }
 
-// ── c_import builtin tests ────────────────────────────────────────────────────
+// ── c_load_header builtin tests ───────────────────────────────────────────────
 
 #[test]
-fn c_import_returns_struct_of_cfunctions() {
+fn c_load_header_returns_struct_of_cfuncsigs() {
     let builtins = get_interpret_builtins();
-    let c_import = builtins["c_import"];
+    let builtin = builtins["c_load_header"];
 
-    let arg = DataValue::Struct(vec![
-        ("header".to_owned(), DataValue::Str(fixture_header())),
-        ("lib".to_owned(), DataValue::Str("libm.so.6".to_owned())),
-    ]);
-
-    let result = c_import.execute(Some(arg), &HashMap::new())
-        .expect("c_import failed");
+    let result = builtin
+        .execute(Some(DataValue::Str(fixture_header())), &HashMap::new())
+        .expect("c_load_header failed");
 
     match result {
         Some(DataValue::Struct(fields)) => {
             let has_sqrt = fields.iter().any(|(name, val)| {
-                name == "sqrt" && matches!(val, DataValue::CFunction(_))
+                name == "sqrt" && matches!(val, DataValue::CFuncSig(s) if s.lib.is_none())
             });
-            assert!(has_sqrt, "returned struct should contain a CFunction named 'sqrt'");
+            assert!(has_sqrt, "struct should contain an unlinked CFuncSig named 'sqrt'");
         }
         other => panic!("expected Struct, got {:?}", other),
     }
 }
 
 #[test]
-fn c_import_error_on_wrong_arg_type() {
+fn c_load_header_error_on_wrong_arg() {
     let builtins = get_interpret_builtins();
-    let c_import = builtins["c_import"];
-
-    let result = c_import.execute(Some(DataValue::Str("not-a-struct".to_owned())), &HashMap::new());
-    assert!(result.is_err(), "c_import with non-struct arg should return Err");
+    let result = builtins["c_load_header"]
+        .execute(Some(DataValue::Int(42)), &HashMap::new());
+    assert!(result.is_err());
 }
+
+// ── c_link_lib builtin tests ──────────────────────────────────────────────────
+
+#[test]
+fn c_link_lib_links_cfuncsigs_in_struct() {
+    let builtins = get_interpret_builtins();
+
+    // First get the unlinked header struct.
+    let header = builtins["c_load_header"]
+        .execute(Some(DataValue::Str(fixture_header())), &HashMap::new())
+        .expect("c_load_header failed")
+        .unwrap();
+
+    // Now link against libm.
+    let arg = DataValue::Struct(vec![
+        ("header".to_owned(), header),
+        ("lib".to_owned(), DataValue::Str("libm.so.6".to_owned())),
+    ]);
+    let result = builtins["c_link_lib"]
+        .execute(Some(arg), &HashMap::new())
+        .expect("c_link_lib failed");
+
+    match result {
+        Some(DataValue::Struct(fields)) => {
+            let sqrt = fields.iter()
+                .find(|(name, _)| name == "sqrt")
+                .expect("sqrt not in linked struct");
+            assert!(
+                matches!(&sqrt.1, DataValue::CFuncSig(s) if s.lib.is_some()),
+                "sqrt should be linked after c_link_lib"
+            );
+        }
+        other => panic!("expected Struct, got {:?}", other),
+    }
+}
+
+#[test]
+fn c_link_lib_error_on_wrong_arg() {
+    let builtins = get_interpret_builtins();
+    let result = builtins["c_link_lib"]
+        .execute(Some(DataValue::Str("not-a-struct".to_owned())), &HashMap::new());
+    assert!(result.is_err());
+}
+
+// ── c_load_header is comptime-available ───────────────────────────────────────
+
+#[test]
+fn c_load_header_available_at_comptime() {
+    let builtins = get_comptime_builtins();
+    assert!(builtins.contains_key("c_load_header"), "c_load_header must be a comptime builtin");
+    assert!(!builtins.contains_key("c_link_lib"), "c_link_lib must NOT be a comptime builtin");
+}
+

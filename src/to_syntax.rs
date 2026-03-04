@@ -44,6 +44,9 @@ impl ToSyntax for DataValue {
       DataValue::Type(v) => v.to_syntax(),
       DataValue::Label(v) => v.clone(),
       DataValue::CFunction(f) => format!("<CFunction {}>", f.name),
+      DataValue::Pointer { addr, pointee_ty } =>
+        format!("<Pointer 0x{:x} : {}>", addr, pointee_ty.to_syntax()),
+      DataValue::CFuncSig(sig) => format!("<CFuncSig {}>", sig.name),
     }
   }
 }
@@ -100,6 +103,7 @@ impl ToSyntax for SidType {
       SidType::List(elem)             => format!("{} list @!", elem.to_syntax()),
       SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
       SidType::Fn { args, ret }       => format!("{} {} fn_type @!", args.to_syntax(), ret.to_syntax()),
+      SidType::Pointer(pointee)       => format!("{} ptr @!", pointee.to_syntax()),
       SidType::Literal(v)             => v.to_syntax(),
       SidType::Union(types) => {
         let inner = types.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(", ");
