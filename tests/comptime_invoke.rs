@@ -10,7 +10,7 @@ struct MockDouble;
 impl InterpretBuiltIn for MockDouble {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, arg: Option<DataValue>, _state: &mut GlobalState)
+  fn execute(&self, arg: Option<DataValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
     match arg {
@@ -26,7 +26,7 @@ struct MockDrop;
 impl InterpretBuiltIn for MockDrop {
   fn arg_count(&self) -> u8 { 1 }
   fn return_count(&self) -> u8 { 0 }
-  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
+  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
     Ok(vec![])
@@ -39,7 +39,7 @@ struct MockConst;
 impl InterpretBuiltIn for MockConst {
   fn arg_count(&self) -> u8 { 0 }
   fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState)
+  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
     Ok(vec![DataValue::Int(42)])
@@ -54,7 +54,7 @@ pub struct ComptimePassFixture {
 }
 impl ComptimePassFixture {
   pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
-    let result = comptime_pass(self.input.clone(), builtins, &HashMap::new())
+    let result = comptime_pass(self.input.clone(), builtins, &mut HashMap::new())
       .expect("comptime_pass failed unexpectedly");
     assert_eq!(result, self.expected_output, "comptime_pass output didn't match expectations");
   }
@@ -66,7 +66,7 @@ pub struct ComptimeErrorFixture {
 impl ComptimeErrorFixture {
   pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
     assert!(
-      comptime_pass(self.input.clone(), builtins, &HashMap::new()).is_err(),
+      comptime_pass(self.input.clone(), builtins, &mut HashMap::new()).is_err(),
       "expected comptime_pass to return Err but it succeeded"
     );
   }

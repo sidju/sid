@@ -10,7 +10,7 @@ pub struct ComptimePassFixture {
 }
 impl ComptimePassFixture {
   pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
-    let result = comptime_pass(self.input.clone(), builtins, &HashMap::new())
+    let result = comptime_pass(self.input.clone(), builtins, &mut HashMap::new())
       .expect("comptime_pass failed unexpectedly");
     assert_eq!(result, self.expected_output, "comptime_pass output didn't match expectations");
   }
@@ -22,7 +22,7 @@ pub struct ComptimeErrorFixture {
 impl ComptimeErrorFixture {
   pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
     assert!(
-      comptime_pass(self.input.clone(), builtins, &HashMap::new()).is_err(),
+      comptime_pass(self.input.clone(), builtins, &mut HashMap::new()).is_err(),
       "expected comptime_pass to return Err but it succeeded"
     );
   }

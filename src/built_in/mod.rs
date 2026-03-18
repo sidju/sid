@@ -32,7 +32,7 @@ impl InterpretBuiltIn for CLoadHeader {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    _global_state: &mut GlobalState,
+    _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let (header_path, lib_name) = parse_load_header_arg(arg)?;
     let sigs = parse_c_header(&header_path, &lib_name)?;
@@ -109,7 +109,7 @@ impl InterpretBuiltIn for CLinkLib {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    global_state: &mut GlobalState,
+    global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let (lib_path, lib_name) = parse_link_lib_arg(arg)?;
     if !global_state.libraries.contains_key(lib_name.as_str()) {
@@ -174,7 +174,7 @@ impl InterpretBuiltIn for LoadScope {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    global_state: &mut GlobalState,
+    global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let fields = match arg {
       Some(DataValue::Struct(f)) => f,
@@ -210,7 +210,7 @@ impl InterpretBuiltIn for Clone {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    _global_state: &mut GlobalState,
+    _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match arg {
       Some(v) => Ok(vec![v.clone(), v]),
@@ -240,7 +240,7 @@ impl InterpretBuiltIn for Drop {
   fn execute(
     &self,
     _arg: Option<DataValue>,
-    _global_state: &mut GlobalState,
+    _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     Ok(vec![])
   }
@@ -264,7 +264,7 @@ impl InterpretBuiltIn for Eq {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    _global_state: &mut GlobalState,
+    _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match arg {
       Some(DataValue::List(mut items)) if items.len() == 2 => {
@@ -295,7 +295,7 @@ impl InterpretBuiltIn for Assert {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    _global_state: &mut GlobalState,
+    _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match arg {
       Some(DataValue::Bool(true)) => Ok(vec![]),

@@ -30,9 +30,9 @@ fn run_file(path: &str) {
 
 fn compile(source: &str) -> Program {
   let parsed = parse_str(source).expect("parse error");
-  let global_scope = HashMap::new();
+  let mut global_scope = HashMap::new();
   let comptime_builtins = get_comptime_builtins();
-  let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &global_scope)
+  let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
   // Wrap the post-comptime sequence as a substack and render it to get the
   // initial data stack (TemplateValue entries ready for the interpreter).
@@ -49,7 +49,8 @@ fn compile(source: &str) -> Program {
 
 fn run(source: &str) {
   let program = compile(source);
-  let global_state = GlobalState::with_scope(program.global_scope);
+  let mut global_scope = program.global_scope;
+  let global_state = GlobalState::new(&mut global_scope);
   let program_stack = vec![ProgramValue::Invoke];
   let runtime_builtins = get_interpret_builtins();
   interpret(

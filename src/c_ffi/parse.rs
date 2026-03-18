@@ -16,7 +16,15 @@ use crate::type_system::SidType;
 /// pointers, struct/union/enum/typedef declarations, and any declaration whose
 /// types cannot be bridged are silently skipped.
 pub fn parse_c_header(path: &str, lib_name: &str) -> Result<Vec<CFuncSig>> {
-    let config = lang_c::driver::Config::default();
+    let mut config = lang_c::driver::Config::default();
+    // Strip GCC-extension keywords and attributes that lang-c doesn't understand.
+    // __attribute__((malloc(fclose, ...))) and similar annotations cause lang-c
+    // to silently drop entire function declarations (e.g. fopen on glibc systems).
+    config.cpp_options.extend([
+        "-D__restrict=".to_owned(),
+        "-D__restrict__=".to_owned(),
+        "-D__attribute__(x)=".to_owned(),
+    ]);
     let parse = lang_c::driver::parse(&config, path)
         .map_err(|e| anyhow::anyhow!("failed to parse '{}': {}", path, e))?;
     Ok(extract_function_sigs(&parse.unit, lib_name))
@@ -50,31 +58,33 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Opti
         _ => return None,
     };
 
-    // The innermost derived declarator must be a function call; otherwise this
-    // is a variable, array, or pointer declaration.
-    let func_decl = match declarator.derived.first() {
-        Some(d) => match &d.node {
-            DerivedDeclarator::Function(f) => &f.node,
-            _ => return None,
-        },
-        None => return None,
+    // Find the Function derived declarator. For a plain function `T f(params)`,
+    // derived = [Function]. For a function returning a pointer `T *f(params)`,
+    // lang_c puts derived = [Pointer, Function] — the Pointer comes first
+    // because it is the "outer" modifier in the C grammar.
+    let func_idx = declarator.derived.iter().position(|d| {
+        matches!(d.node, DerivedDeclarator::Function(_))
+    })?;
+    let func_decl = match &declarator.derived[func_idx].node {
+        DerivedDeclarator::Function(f) => &f.node,
+        _ => unreachable!(),
     };
 
-    // Skip variadic functions — we cannot bridge them safely.
-    if func_decl.ellipsis == Ellipsis::Some {
-        return None;
-    }
+    // Note whether the function is variadic. We still bridge it — the caller
+    // passes a List that includes both the fixed params and the variadic args,
+    // whose C types are inferred from the runtime DataValues.
+    let variadic = func_decl.ellipsis == Ellipsis::Some;
 
-    // Any Pointer derived declarators that appear *after* (outer than) the
-    // Function entry indicate a pointer return type.
-    let has_return_ptr = declarator.derived[1..].iter().any(|d| {
+    // Any Pointer derived declarators that appear before the Function entry
+    // (i.e. at indices < func_idx) indicate a pointer return type.
+    let has_return_ptr = declarator.derived[..func_idx].iter().any(|d| {
         matches!(&d.node, DerivedDeclarator::Pointer(_))
     });
 
     let ret = specifiers_to_ctype(&decl.specifiers, has_return_ptr)?;
     let params = extract_params(&func_decl.parameters)?;
 
-    Some(CFuncSig { name, ret, params, lib_name: lib_name.to_owned() })
+    Some(CFuncSig { name, ret, params, variadic, lib_name: lib_name.to_owned() })
 }
 
 /// Extract the parameter types from a function's parameter list.
@@ -218,3 +228,5 @@ fn sid_type_for_typedef(name: &str) -> Option<SidType> {
         _ => None,
     }
 }
+
+

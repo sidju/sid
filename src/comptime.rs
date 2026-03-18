@@ -24,7 +24,7 @@ use crate::{
 pub fn comptime_pass(
   values: Vec<TemplateValue>,
   builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-  scope: &HashMap<String, DataValue>,
+  scope: &mut HashMap<String, DataValue>,
 ) -> Result<Vec<TemplateValue>> {
   let mut stack: Vec<TemplateValue> = Vec::new();
 
@@ -75,7 +75,8 @@ pub fn comptime_pass(
           None
         };
 
-        for result in builtin.execute(arg, &mut GlobalState::new())? {
+        let mut gs = GlobalState::new(scope);
+        for result in builtin.execute(arg, &mut gs)? {
           stack.push(TemplateValue::from(result));
         }
       }
@@ -92,7 +93,7 @@ pub fn comptime_pass(
 fn comptime_pass_template_data(
   data: TemplateData,
   builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-  scope: &HashMap<String, DataValue>,
+  scope: &mut HashMap<String, DataValue>,
 ) -> Result<TemplateData> {
   match data {
     TemplateData::Substack(tvs) =>
@@ -123,7 +124,7 @@ fn comptime_pass_template_data(
 fn render_comptime_template(
   template: Template,
   stack: &mut Vec<TemplateValue>,
-  scope: &HashMap<String, DataValue>,
+  scope: &mut HashMap<String, DataValue>,
 ) -> Result<()> {
   let n = template.consumes_stack_entries;
   if n > stack.len() {

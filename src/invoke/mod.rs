@@ -11,20 +11,19 @@ use super::{
   call_cfuncsig,
 };
 
-pub struct ExeState {
+pub struct ExeState<'a> {
   pub program_stack: Vec<ProgramValue>,
   pub data_stack: Vec<TemplateValue>,
   pub local_scope: HashMap<String, DataValue>,
-  pub global_state: GlobalState,
+  pub global_state: GlobalState<'a>,
 }
 
-// Invoking behaves very differently depending on what is invoked
-pub fn invoke<'a>(
+pub fn invoke<'a, 'b>(
   data_stack: &mut Vec<TemplateValue>,
   program_stack: &mut Vec<ProgramValue>,
   local_scope: &mut HashMap<String, DataValue>,
-  global_state: &mut GlobalState,
-  builtins: &HashMap<&'a str, &'a dyn InterpretBuiltIn>,
+  global_state: &mut GlobalState<'a>,
+  builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
 ) {
   // Resolve labels before invoking
   let value = match data_stack.pop() {
@@ -71,8 +70,17 @@ pub fn invoke<'a>(
     // Invoking a linked CFuncSig: look up the symbol by name at call time.
     DataValue::CFuncSig(sig) => {
       let param_count = sig.params.len();
-      let arg = if param_count == 0 {
-        None
+      // Variadic functions always take a List (fixed + variadic args together).
+      let arg = if sig.variadic || param_count > 1 {
+        match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
+            Some(DataValue::List(items)),
+          Some(other) => panic!(
+            "CFuncSig '{}': expected List, got {:?}",
+            sig.name, other
+          ),
+          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
+        }
       } else if param_count == 1 {
         match data_stack.pop() {
           Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
@@ -80,15 +88,7 @@ pub fn invoke<'a>(
           None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
         }
       } else {
-        match data_stack.pop() {
-          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
-            Some(DataValue::List(items)),
-          Some(other) => panic!(
-            "CFuncSig '{}': expected List for {} params, got {:?}",
-            sig.name, param_count, other
-          ),
-          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
-        }
+        None
       };
       if let Some(result) = call_cfuncsig(&sig, arg, &global_state.libraries)
         .unwrap_or_else(|e| panic!("CFuncSig '{}' call error: {}", sig.name, e))
@@ -129,11 +129,11 @@ pub fn invoke<'a>(
   }
 }
 
-pub fn interpret<'a>(
+pub fn interpret<'a, 'b>(
   program: Vec<ProgramValue>,
   data_stack: Vec<TemplateValue>,
-  global_state: GlobalState,
-  builtins: &HashMap<&'a str, &'a dyn InterpretBuiltIn>,
+  global_state: GlobalState<'a>,
+  builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
 ) {
   let local_scope = HashMap::new();
   let mut exe_state = ExeState {
@@ -147,9 +147,9 @@ pub fn interpret<'a>(
   }
 }
 
-pub fn interpret_one<'a>(
-  exe_state: &mut ExeState,
-  builtins: &HashMap<&'a str, &'a dyn InterpretBuiltIn>,
+pub fn interpret_one<'a, 'b>(
+  exe_state: &mut ExeState<'a>,
+  builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
 ) {
   use ProgramValue as PV;
   let operation = exe_state.program_stack.pop().unwrap();

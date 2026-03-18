@@ -33,26 +33,21 @@ use crate::c_ffi::{CFunc, CFuncSig};
 /// Splitting these two concerns into a single struct lets builtins like
 /// `c_link_lib` load a library once and record it here, while `call_cfuncsig`
 /// looks up (and lazily loads) the library by name at call time.
-pub struct GlobalState {
+///
+/// The scope is held as a mutable reference so callers retain ownership of
+/// the underlying `HashMap` — no `mem::take`/put-back dance required.
+pub struct GlobalState<'a> {
   /// Named values accessible from anywhere in the program.
-  pub scope: HashMap<String, DataValue>,
+  pub scope: &'a mut HashMap<String, DataValue>,
   /// Shared libraries loaded by `c_link_lib`, keyed by the path/soname used
   /// to load them.  Libraries are added on first use and reused thereafter.
   pub libraries: HashMap<String, Arc<Library>>,
 }
 
-impl GlobalState {
-  pub fn new() -> Self {
-    Self { scope: HashMap::new(), libraries: HashMap::new() }
-  }
-  /// Construct a `GlobalState` with a pre-populated scope and no libraries.
-  pub fn with_scope(scope: HashMap<String, DataValue>) -> Self {
+impl<'a> GlobalState<'a> {
+  pub fn new(scope: &'a mut HashMap<String, DataValue>) -> Self {
     Self { scope, libraries: HashMap::new() }
   }
-}
-
-impl Default for GlobalState {
-  fn default() -> Self { Self::new() }
 }
 
 pub trait InterpretBuiltIn: Debug {
@@ -63,7 +58,7 @@ pub trait InterpretBuiltIn: Debug {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    global_state: &mut GlobalState,
+    global_state: &mut GlobalState<'_>,
   ) -> Result<Vec<DataValue>>;
 }
 

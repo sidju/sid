@@ -49,8 +49,14 @@ impl CType {
 pub struct CFuncSig {
     pub name: String,
     pub ret: CType,
-    /// Parameter types in declaration order.  Unnamed parameters are fine.
+    /// The fixed parameter types in declaration order.
+    /// For variadic functions these are only the declared fixed parameters;
+    /// extra argument types are inferred from the runtime values at call time.
     pub params: Vec<CType>,
+    /// `true` if the C function is variadic (`...`).
+    /// Variadic calls always expect a `DataValue::List` with at least
+    /// `params.len()` items; extra items are the variadic arguments.
+    pub variadic: bool,
     /// Name under which the providing library is registered in
     /// [`GlobalState::libraries`].  Must be pre-loaded with `c_link_lib`
     /// before any function with this signature is called.
@@ -63,6 +69,7 @@ impl std::fmt::Debug for CFuncSig {
             .field("name", &self.name)
             .field("ret",  &self.ret)
             .field("params", &self.params)
+            .field("variadic", &self.variadic)
             .field("lib_name", &self.lib_name)
             .finish()
     }
@@ -73,6 +80,7 @@ impl Clone for CFuncSig {
             name:     self.name.clone(),
             ret:      self.ret.clone(),
             params:   self.params.clone(),
+            variadic: self.variadic,
             lib_name: self.lib_name.clone(),
         }
     }
@@ -85,6 +93,7 @@ impl PartialEq for CFuncSig {
         self.name == other.name
             && self.ret == other.ret
             && self.params == other.params
+            && self.variadic == other.variadic
     }
 }
 

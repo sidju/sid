@@ -15,7 +15,7 @@ load_scope @!
 ["libc.so.6" "stdio"] c_link_lib !
 
 # Open README.md for reading. fopen returns a FILE* (Pointer).
-"README.md" "r" fopen !
+["README.md" "r"] fopen !
 # clone it, since fgets eats one copy
 clone!
 

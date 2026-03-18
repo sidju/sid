@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use libloading::Library;
 
 use crate::DataValue;
+use crate::type_system::SidType;
 use super::types::{CFunc, CFuncSig, CType};
 
 // ── Dynamic library loading ───────────────────────────────────────────────────
@@ -70,7 +71,24 @@ pub fn call_cfuncsig(
     call_fn_ptr(fn_ptr, sig, arg)
 }
 
-/// Core call implementation: marshal `arg` according to `sig`, invoke via
+/// Infer the C type to use for a variadic argument based on its runtime value.
+///
+/// Follows C default argument promotions:
+/// - integers → `long` (i64 in a 64-bit register; `%d` reads the lower half)
+/// - floats → `double` (`float` is promoted to `double` in variadic calls)
+/// - strings / pointers → pointer
+fn ctype_for_variadic(val: &DataValue) -> Result<CType> {
+    match val {
+        DataValue::Int(_)          => Ok(CType::Long),
+        DataValue::Float(_)        => Ok(CType::Double),
+        DataValue::Str(_)          => Ok(CType::CString),
+        DataValue::Pointer { .. }  => Ok(CType::Pointer(SidType::Any)),
+        other => bail!(
+            "cannot infer C type for variadic argument: {:?}", other
+        ),
+    }
+}
+
 /// libffi, and unmarshal the return value.
 fn call_fn_ptr(
     fn_ptr: *const (),
@@ -82,15 +100,37 @@ fn call_fn_ptr(
     let params = &sig.params;
 
     // Collect DataValue arguments.
-    let arg_values: Vec<DataValue> = match (params.len(), arg) {
-        (0, _) => vec![],
-        (1, Some(v)) => vec![v],
-        (n, Some(DataValue::List(items))) if items.len() == n => items,
-        (n, _) => bail!(
-            "'{}': expected {} argument(s)",
-            sig.name, n
-        ),
+    // Variadic functions always expect a List (fixed + variadic args together).
+    // Non-variadic functions use the existing 0/1/N convention.
+    let arg_values: Vec<DataValue> = if sig.variadic {
+        match arg {
+            Some(DataValue::List(items)) if items.len() >= params.len() => items,
+            Some(DataValue::List(items)) => bail!(
+                "'{}': variadic call needs at least {} argument(s), got {}",
+                sig.name, params.len(), items.len()
+            ),
+            _ => bail!(
+                "'{}': variadic call expects a List of arguments", sig.name
+            ),
+        }
+    } else {
+        match (params.len(), arg) {
+            (0, _) => vec![],
+            (1, Some(v)) => vec![v],
+            (n, Some(DataValue::List(items))) if items.len() == n => items,
+            (n, _) => bail!(
+                "'{}': expected {} argument(s)",
+                sig.name, n
+            ),
+        }
     };
+
+    // Build the full type list: declared types for fixed params, then inferred
+    // types for any variadic arguments.
+    let mut all_ctypes: Vec<CType> = params.clone();
+    for val in &arg_values[params.len()..] {
+        all_ctypes.push(ctype_for_variadic(val)?);
+    }
 
     // Marshal each Rust value into a C-compatible form that lives long enough
     // for the libffi call.
@@ -106,7 +146,7 @@ fn call_fn_ptr(
     }
 
     let mut stored: Vec<StoredArg> = Vec::with_capacity(arg_values.len());
-    for (val, ctype) in arg_values.iter().zip(params.iter()) {
+    for (val, ctype) in arg_values.iter().zip(all_ctypes.iter()) {
         let s = match (val, ctype) {
             (DataValue::Int(n), CType::Int) => StoredArg::I32(*n as i32),
             (DataValue::Int(n), CType::Long | CType::SizeT) => StoredArg::I64(*n),
@@ -137,7 +177,7 @@ fn call_fn_ptr(
 
     // Build libffi argument list (holds references into `stored`).
     let ffi_arg_types: Vec<libffi::middle::Type> =
-        params.iter().map(CType::to_ffi_type).collect();
+        all_ctypes.iter().map(CType::to_ffi_type).collect();
 
     let mut ffi_args: Vec<libffi::middle::Arg> = Vec::with_capacity(stored.len());
     for s in &stored {
@@ -153,7 +193,11 @@ fn call_fn_ptr(
         ffi_args.push(a);
     }
 
-    let cif = Cif::new(ffi_arg_types, sig.ret.to_ffi_type());
+    let cif = if sig.variadic {
+        Cif::new_variadic(ffi_arg_types, params.len(), sig.ret.to_ffi_type())
+    } else {
+        Cif::new(ffi_arg_types, sig.ret.to_ffi_type())
+    };
     let code_ptr = CodePtr(fn_ptr as *mut _);
 
     // SAFETY: We built the CIF to match the declared C signature.

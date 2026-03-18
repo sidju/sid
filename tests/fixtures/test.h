@@ -24,7 +24,7 @@ struct Foo { int x; };
 // Typedef should be skipped  
 typedef int MyInt;
 
-// Variadic functions should be skipped
+// Variadic functions are bridged; extra arg types are inferred at call time
 int printf(const char *format, ...);
 
 #endif
