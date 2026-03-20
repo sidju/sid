@@ -356,7 +356,7 @@ impl InterpretBuiltIn for PtrCast {
   fn execute(
     &self,
     arg: Option<DataValue>,
-    _global_state: &mut GlobalState<'_>,
+    global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match arg {
       Some(DataValue::List(mut items)) if items.len() == 2 => {
@@ -366,7 +366,12 @@ impl InterpretBuiltIn for PtrCast {
         };
         let pointee_ty = match items.remove(0) {
           DataValue::Type(ty) => ty,
-          other => anyhow::bail!("ptr_cast: second element must be a Type, got {:?}", other),
+          DataValue::Label(name) => match global_state.scope.get(&name) {
+            Some(DataValue::Type(ty)) => ty.clone(),
+            Some(other) => anyhow::bail!("ptr_cast: label '{}' resolves to {:?}, not a Type", name, other),
+            None => anyhow::bail!("ptr_cast: undefined label '{}'", name),
+          },
+          other => anyhow::bail!("ptr_cast: second element must be a Type or type label, got {:?}", other),
         };
         Ok(vec![DataValue::Pointer { addr, pointee_ty }])
       }
