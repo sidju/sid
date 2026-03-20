@@ -25,7 +25,7 @@ fn parse_substack() {
         expected_output: vec![
             Template::substack((
                 vec![
-                    DataValue::Str("data".to_owned()).into(),
+                    DataValue::Str(std::ffi::CString::new("data").unwrap()).into(),
                     DataValue::Int(5).into(),
                     TemplateValue::ParentStackMove(1),
                 ],
@@ -43,7 +43,7 @@ fn parse_script() {
         expected_output: vec![
             Template::script((
                 vec![
-                    DataValue::Str("hi".to_owned()).into(),
+                    DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
                     DataValue::Int(5).into(),
                 ],
                 0
@@ -60,7 +60,7 @@ fn parse_list() {
         expected_output: vec![
             Template::list((
                 vec![
-                    DataValue::Str("data".to_owned()).into(),
+                    DataValue::Str(std::ffi::CString::new("data").unwrap()).into(),
                     DataValue::Int(5).into(),
                     TemplateValue::ParentStackMove(1),
                 ],

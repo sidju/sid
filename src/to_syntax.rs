@@ -20,7 +20,7 @@ impl ToSyntax for DataValue {
   fn to_syntax(&self) -> String {
     match self {
       DataValue::Bool(v) => v.to_string(),
-      DataValue::Str(v) => format!("\"{}\"", v),
+      DataValue::Str(v) => format!("\"{}\"", v.to_string_lossy()),
       DataValue::Char(v) => format!("\'{}\'", v),
       DataValue::Int(v) => v.to_string(),
       DataValue::Float(v) => v.to_string(),

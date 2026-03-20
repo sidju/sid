@@ -7,12 +7,15 @@
 
 "/usr/include/stdio.h" c_load_header @!
 load_scope @!
+"/usr/include/stdlib.h" c_load_header @!
+load_scope @!
 
 # Link the actual shared library at runtime under the name "stdio" (matching
 # the stem used above).  The list form lets us load libc.so.6 but register it
 # under a different key.
 
 ["libc.so.6" "stdio"] c_link_lib !
+["libc.so.6" "stdlib"] c_link_lib !
 
 # Open README.md for reading. fopen returns a FILE* (Pointer).
 ["README.md" "r"] fopen !
@@ -29,11 +32,13 @@ malloc! clone!
 # arguments are backwards in sid so we have them nearly in order. Just an
 # extra pointer copy to move back
 # Use templating to reorder the stack for fgets
-($1 $4 $3 $2)! 
-fgets !
+($1 $4 $3 $2)!
+[$1 $2 $3] fgets !
 
-($1 $2)! # And again for fclose, to keep the fgets retval out of our way
+# And again for fclose, to keep the fgets retval out of our way
+($1 $2)!
 fclose !
+
 0 eq! assert! # Check retval from fclose
 0 eq! assert! # Check retval from fgets
 

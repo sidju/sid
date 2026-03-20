@@ -87,11 +87,11 @@ fn passthrough_plain_values() {
   ComptimePassFixture {
     input: vec![
       DataValue::Int(1).into(),
-      DataValue::Str("hi".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
     ],
     expected_output: vec![
       DataValue::Int(1).into(),
-      DataValue::Str("hi".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
     ],
   }.test(&no_builtins());
 }
@@ -175,16 +175,16 @@ fn comptime_invoke_leaves_surrounding_stack_intact() {
 
   ComptimePassFixture {
     input: vec![
-      DataValue::Str("before".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("before").unwrap()).into(),
       DataValue::Int(3).into(),
       label("double"),
       comptime_invoke(),
-      DataValue::Str("after".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("after").unwrap()).into(),
     ],
     expected_output: vec![
-      DataValue::Str("before".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("before").unwrap()).into(),
       DataValue::Int(6).into(),
-      DataValue::Str("after".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("after").unwrap()).into(),
     ],
   }.test(&builtins);
 }

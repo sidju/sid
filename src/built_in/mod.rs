@@ -1,10 +1,16 @@
 use std::collections::HashMap;
+use std::ffi::CString;
 
 use crate::InterpretBuiltIn;
 use crate::CompileBuiltIn;
 use crate::DataValue;
 use crate::GlobalState;
 use crate::c_ffi::{parse_c_header, open_library};
+
+/// Convert a `CString` to a `String`, falling back to lossy UTF-8 conversion.
+fn cstring_to_string(cs: CString) -> String {
+  cs.into_string().unwrap_or_else(|e| e.into_cstring().to_string_lossy().into_owned())
+}
 
 // ── c_load_header ─────────────────────────────────────────────────────────────
 
@@ -55,16 +61,16 @@ impl InterpretBuiltIn for CLoadHeader {
 fn parse_load_header_arg(arg: Option<DataValue>) -> anyhow::Result<(String, String)> {
   match arg {
     Some(DataValue::Str(path)) => {
-      let lib_name = stem_of(&path)?;
-      Ok((path, lib_name))
+      let lib_name = stem_of(&path.to_string_lossy())?;
+      Ok((cstring_to_string(path), lib_name))
     }
     Some(DataValue::List(mut items)) if items.len() == 2 => {
       let path = match items.remove(0) {
-        DataValue::Str(s) => s,
+        DataValue::Str(s) => cstring_to_string(s),
         other => anyhow::bail!("c_load_header: first list element must be Str (path), got {:?}", other),
       };
       let lib_name = match items.remove(0) {
-        DataValue::Str(s) => s,
+        DataValue::Str(s) => cstring_to_string(s),
         other => anyhow::bail!("c_load_header: second list element must be Str (lib_name), got {:?}", other),
       };
       Ok((path, lib_name))
@@ -127,14 +133,14 @@ impl InterpretBuiltIn for CLinkLib {
 /// - `List([Str(path), Str(name)])` — load path, register under name.
 fn parse_link_lib_arg(arg: Option<DataValue>) -> anyhow::Result<(String, String)> {
   match arg {
-    Some(DataValue::Str(path)) => Ok((path.clone(), path)),
+    Some(DataValue::Str(path)) => Ok((cstring_to_string(path.clone()), cstring_to_string(path))),
     Some(DataValue::List(mut items)) if items.len() == 2 => {
       let path = match items.remove(0) {
-        DataValue::Str(s) => s,
+        DataValue::Str(s) => cstring_to_string(s),
         other => anyhow::bail!("c_link_lib: first list element must be Str (lib_path), got {:?}", other),
       };
       let name = match items.remove(0) {
-        DataValue::Str(s) => s,
+        DataValue::Str(s) => cstring_to_string(s),
         other => anyhow::bail!("c_link_lib: second list element must be Str (lib_name), got {:?}", other),
       };
       Ok((path, name))
@@ -305,6 +311,93 @@ impl InterpretBuiltIn for Assert {
   }
 }
 
+// ── ptr_cast ──────────────────────────────────────────────────────────────────
+
+/// Built-in that re-types a pointer by replacing its pointee type.
+///
+/// Useful for casting a `void *` returned by `malloc` (or any untyped pointer)
+/// to a concrete pointer type before passing it to a C function that expects a
+/// typed pointer.
+///
+/// Argument: `DataValue::List([Pointer{addr, ..}, Type(SidType)])`.
+/// Return:   `DataValue::Pointer { addr, pointee_ty }` with the new type.
+///
+/// Example (cast `void *` from malloc to a `str` pointer):
+/// ```text
+/// 4096 malloc!  [$ Str ptr]  ptr_cast!
+/// ```
+#[derive(Debug)]
+struct PtrCast;
+
+impl InterpretBuiltIn for PtrCast {
+  fn arg_count(&self) -> u8 { 1 }
+  fn return_count(&self) -> u8 { 1 }
+
+  fn execute(
+    &self,
+    arg: Option<DataValue>,
+    _global_state: &mut GlobalState<'_>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    match arg {
+      Some(DataValue::List(mut items)) if items.len() == 2 => {
+        let addr = match items.remove(0) {
+          DataValue::Pointer { addr, .. } => addr,
+          other => anyhow::bail!("ptr_cast: first element must be a Pointer, got {:?}", other),
+        };
+        let pointee_ty = match items.remove(0) {
+          DataValue::Type(ty) => ty,
+          other => anyhow::bail!("ptr_cast: second element must be a Type, got {:?}", other),
+        };
+        Ok(vec![DataValue::Pointer { addr, pointee_ty }])
+      }
+      other => anyhow::bail!("ptr_cast expects [Pointer, Type], got {:?}", other),
+    }
+  }
+}
+
+// ── ptr_read_cstr ─────────────────────────────────────────────────────────────
+
+/// Built-in that reads a null-terminated C string from a raw pointer.
+///
+/// The pointer must point to a region of memory that contains a valid
+/// null-terminated byte string.  The bytes are copied into a new
+/// `DataValue::Str` (backed by `CString`) — the original buffer is not freed
+/// or otherwise affected.
+///
+/// Argument: `DataValue::Pointer { addr, .. }`.
+/// Return:   `DataValue::Str(CString)` with the contents up to the first NUL.
+///
+/// # Safety
+/// The pointer must be non-null and point to a valid, null-terminated C string.
+/// Behaviour is undefined if `addr` is dangling, misaligned, or not
+/// null-terminated.
+#[derive(Debug)]
+struct PtrReadCstr;
+
+impl InterpretBuiltIn for PtrReadCstr {
+  fn arg_count(&self) -> u8 { 1 }
+  fn return_count(&self) -> u8 { 1 }
+
+  fn execute(
+    &self,
+    arg: Option<DataValue>,
+    _global_state: &mut GlobalState<'_>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    match arg {
+      Some(DataValue::Pointer { addr, .. }) => {
+        let ptr = addr as *const std::ffi::c_char;
+        if ptr.is_null() {
+          anyhow::bail!("ptr_read_cstr: pointer is null");
+        }
+        // SAFETY: caller guarantees the pointer is valid and null-terminated.
+        let cs = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_owned();
+        Ok(vec![DataValue::Str(cs)])
+      }
+      other => anyhow::bail!("ptr_read_cstr expects Pointer, got {:?}", other),
+    }
+  }
+}
+
 pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretBuiltIn> {
   static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
   static C_LINK_LIB: CLinkLib = CLinkLib;
@@ -313,6 +406,8 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   static DROP: Drop = Drop;
   static EQ: Eq = Eq;
   static ASSERT: Assert = Assert;
+  static PTR_CAST: PtrCast = PtrCast;
+  static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
   let mut m: HashMap<&'static str, &'static dyn InterpretBuiltIn> = HashMap::new();
   m.insert("c_load_header", &C_LOAD_HEADER);
   m.insert("c_link_lib", &C_LINK_LIB);
@@ -321,6 +416,8 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   m.insert("drop", &DROP);
   m.insert("eq", &EQ);
   m.insert("assert", &ASSERT);
+  m.insert("ptr_cast", &PTR_CAST);
+  m.insert("ptr_read_cstr", &PTR_READ_CSTR);
   m
 }
 

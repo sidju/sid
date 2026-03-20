@@ -20,6 +20,7 @@
 /// property where atoms are valid values usable as implicit enums.
 
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::fmt::Debug;
 use std::sync::Arc;
 use anyhow::Result;
@@ -84,7 +85,10 @@ pub trait CompileBuiltIn: Debug {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataValue {
   Bool(bool),
-  Str(String),
+  /// A C-compatible string: null-terminated, no interior NUL bytes.
+  /// Using `CString` rather than `String` removes the UTF-8 requirement and
+  /// allows direct use as a `char *` in C FFI calls without re-allocation.
+  Str(CString),
   Char(String), // Holds a full grapheme cluster, which requires a string
   Int(i64),
   Float(f64),

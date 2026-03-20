@@ -8,7 +8,7 @@ fn parse_comptime_substack() {
             Template::substack((
                 vec![
                     DataValue::Int(5).into(),
-                    DataValue::Str("hi".to_owned()).into(),
+                    DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
                 ],
                 0
             )).mark_comptime().into(),
@@ -77,7 +77,7 @@ fn parse_comptime_script() {
             Template::script((
                 vec![
                     DataValue::Int(5).into(),
-                    DataValue::Str("hi".to_owned()).into(),
+                    DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
                 ],
                 0
             )).mark_comptime().into(),

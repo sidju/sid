@@ -134,7 +134,7 @@ fn c_load_header_str_arg_derives_lib_name() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let mut result = builtins["c_load_header"]
-        .execute(Some(DataValue::Str(fixture_header())), &mut state)
+        .execute(Some(DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap())), &mut state)
         .expect("c_load_header failed");
 
     assert_eq!(result.len(), 1);
@@ -156,8 +156,8 @@ fn c_load_header_str_arg_derives_lib_name() {
 fn c_load_header_list_arg_uses_explicit_lib_name() {
     let builtins = get_interpret_builtins();
     let arg = DataValue::List(vec![
-        DataValue::Str(fixture_header()),
-        DataValue::Str(TEST_LIB.to_owned()),
+        DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap()),
+        DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap()),
     ]);
 
     let mut scope = HashMap::new();
@@ -199,7 +199,7 @@ fn c_link_lib_preloads_library() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     builtins["c_link_lib"]
-        .execute(Some(DataValue::Str(TEST_LIB.to_owned())), &mut state)
+        .execute(Some(DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap())), &mut state)
         .expect("c_link_lib failed");
     assert!(state.libraries.contains_key(TEST_LIB), "library should be in central store");
 }
@@ -210,8 +210,8 @@ fn c_link_lib_list_arg_registers_under_name() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let arg = DataValue::List(vec![
-        DataValue::Str(TEST_LIB.to_owned()),
-        DataValue::Str("math".to_owned()),
+        DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap()),
+        DataValue::Str(std::ffi::CString::new("math").unwrap()),
     ]);
     builtins["c_link_lib"]
         .execute(Some(arg), &mut state)
@@ -226,7 +226,7 @@ fn c_link_lib_error_on_missing_library() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["c_link_lib"]
-        .execute(Some(DataValue::Str("/nonexistent/lib.so".to_owned())), &mut state);
+        .execute(Some(DataValue::Str(std::ffi::CString::new("/nonexistent/lib.so").unwrap())), &mut state);
     assert!(result.is_err());
 }
 

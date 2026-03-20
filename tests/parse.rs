@@ -23,8 +23,8 @@ fn parse_string() {
   parse_test_fixture(
     "\"hi\" \"there\"",
     vec![
-      DataValue::Str("hi".to_owned()).into(),
-      DataValue::Str("there".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
+      DataValue::Str(std::ffi::CString::new("there").unwrap()).into(),
     ],
     0
   )
@@ -119,7 +119,7 @@ fn parse_substack() {
     vec![
       Template::substack((
         vec![
-          DataValue::Str("data".to_owned()).into(),
+          DataValue::Str(std::ffi::CString::new("data").unwrap()).into(),
           DataValue::Int(5).into(),
           TemplateValue::ParentStackMove(1),
         ],
@@ -137,7 +137,7 @@ fn parse_list() {
     vec![
       Template::list((
         vec![
-          DataValue::Str("data".to_owned()).into(),
+          DataValue::Str(std::ffi::CString::new("data").unwrap()).into(),
           DataValue::Int(5).into(),
           TemplateValue::ParentStackMove(1),
         ],
@@ -171,8 +171,8 @@ fn parse_comments() {
   parse_test_fixture(
     "\"hi\" #not\n \"there\"\n#more comments",
     vec![
-      DataValue::Str("hi".to_owned()).into(),
-      DataValue::Str("there".to_owned()).into(),
+      DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
+      DataValue::Str(std::ffi::CString::new("there").unwrap()).into(),
     ],
     0
   )
@@ -185,7 +185,7 @@ fn parse_script() {
     vec![
       Template::script((
         vec![
-          DataValue::Str("hi".to_owned()).into(),
+          DataValue::Str(std::ffi::CString::new("hi").unwrap()).into(),
           DataValue::Int(5).into(),
         ],
         0

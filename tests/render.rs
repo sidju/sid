@@ -122,8 +122,8 @@ fn render_set() {
   render_test_fixture(
     Template::set((
       vec![
-        DataValue::Str("a".to_owned()).into(),
-        DataValue::Str("b".to_owned()).into(),
+        DataValue::Str(std::ffi::CString::new("a").unwrap()).into(),
+        DataValue::Str(std::ffi::CString::new("b").unwrap()).into(),
       ],
       0
     )),
@@ -132,8 +132,8 @@ fn render_set() {
     HashMap::new(),
     vec![],
     vec![DataValue::Set(vec![
-      DataValue::Str("a".to_owned()),
-      DataValue::Str("b".to_owned()),
+      DataValue::Str(std::ffi::CString::new("a").unwrap()),
+      DataValue::Str(std::ffi::CString::new("b").unwrap()),
     ])],
   )
 }

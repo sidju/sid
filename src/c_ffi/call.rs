@@ -139,9 +139,12 @@ fn call_fn_ptr(
         I64(i64),
         F32(f32),
         F64(f64),
-        /// The CString keeps the allocation alive; `ptr` is the raw char pointer we
-        /// hand to libffi (as `*const c_char`).
+        /// Owned C string passed as `char *`.  The `CString` keeps the allocation
+        /// alive; `ptr` is the raw `*const c_char` handed to libffi.
         CStr(#[allow(dead_code)] CString, *const c_char),
+        /// Owned C string passed as a generic `void *` (e.g. `Str` coerced to
+        /// `CType::Pointer`).  The `CString` keeps the allocation alive.
+        StrAsPtr(#[allow(dead_code)] CString, *const std::ffi::c_void),
         Ptr(*const std::ffi::c_void),
     }
 
@@ -152,13 +155,20 @@ fn call_fn_ptr(
             (DataValue::Int(n), CType::Long | CType::SizeT) => StoredArg::I64(*n),
             (DataValue::Float(f), CType::Float) => StoredArg::F32(*f as f32),
             (DataValue::Float(f), CType::Double) => StoredArg::F64(*f),
+            // Owned string → char *: the payload is already a CString, use directly.
             (DataValue::Str(s), CType::CString) => {
-                let cs = CString::new(s.as_str()).map_err(|_| anyhow::anyhow!(
-                    "'{}': string argument contains interior NUL byte",
-                    sig.name
-                ))?;
-                let ptr = cs.as_ptr();
-                StoredArg::CStr(cs, ptr)
+                let ptr = s.as_ptr();
+                StoredArg::CStr(s.clone(), ptr)
+            }
+            // Unowned pointer passed where char * expected — pass raw address as-is.
+            (DataValue::Pointer { addr, .. }, CType::CString) => {
+                StoredArg::Ptr(*addr as *const std::ffi::c_void)
+            }
+            // Owned string coerced to a generic pointer type — allocate and pass addr.
+            (DataValue::Str(s), CType::Pointer(_)) => {
+                let cs = s.clone();
+                let ptr = cs.as_ptr() as *const std::ffi::c_void;
+                StoredArg::StrAsPtr(cs, ptr)
             }
             // Accept both a raw integer address and a typed Pointer value.
             (DataValue::Int(n), CType::Pointer(_)) => {
@@ -188,6 +198,7 @@ fn call_fn_ptr(
             StoredArg::F64(v) => libffi::middle::arg(v),
             // Pass `&ptr` so that libffi reads the char* value from the stack slot.
             StoredArg::CStr(_, ptr) => libffi::middle::arg(ptr),
+            StoredArg::StrAsPtr(_, ptr) => libffi::middle::arg(ptr),
             StoredArg::Ptr(ptr) => libffi::middle::arg(ptr),
         };
         ffi_args.push(a);
@@ -227,10 +238,8 @@ fn call_fn_ptr(
             if ptr.is_null() {
                 None
             } else {
-                let s = unsafe { std::ffi::CStr::from_ptr(ptr) }
-                    .to_string_lossy()
-                    .into_owned();
-                Some(DataValue::Str(s))
+                let cs = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_owned();
+                Some(DataValue::Str(cs))
             }
         }
         CType::Pointer(pointee_ty) => {
