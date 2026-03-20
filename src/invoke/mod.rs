@@ -52,7 +52,20 @@ pub fn invoke<'a, 'b>(
     // arg_count/return_count determine stack interaction.
     DataValue::BuiltIn(function) => {
       let builtin = builtins[&function[..]];
-      let arg = if builtin.arg_count() == 1 {
+      let arg = if builtin.arg_count() == 2 {
+        // Pop top two values and package as a List: [deeper, top].
+        let top = match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
+          Some(other) => panic!("BuiltIn '{}': argument is not a concrete value: {:?}", function, other),
+          None => panic!("BuiltIn '{}': expected 2 arguments but stack was empty", function),
+        };
+        let below = match data_stack.pop() {
+          Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
+          Some(other) => panic!("BuiltIn '{}': argument is not a concrete value: {:?}", function, other),
+          None => panic!("BuiltIn '{}': expected 2 arguments but stack had only 1", function),
+        };
+        Some(DataValue::List(vec![below, top]))
+      } else if builtin.arg_count() == 1 {
         match data_stack.pop() {
           Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
           Some(other) => panic!("BuiltIn '{}': argument is not a concrete value: {:?}", function, other),

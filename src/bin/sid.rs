@@ -30,7 +30,7 @@ fn run_file(path: &str) {
 
 fn compile(source: &str) -> Program {
   let parsed = parse_str(source).expect("parse error");
-  let mut global_scope = HashMap::new();
+  let mut global_scope = default_scope();
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");

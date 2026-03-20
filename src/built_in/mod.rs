@@ -5,11 +5,31 @@ use crate::InterpretBuiltIn;
 use crate::CompileBuiltIn;
 use crate::DataValue;
 use crate::GlobalState;
+use crate::SidType;
 use crate::c_ffi::{parse_c_header, open_library};
 
 /// Convert a `CString` to a `String`, falling back to lossy UTF-8 conversion.
 fn cstring_to_string(cs: CString) -> String {
   cs.into_string().unwrap_or_else(|e| e.into_cstring().to_string_lossy().into_owned())
+}
+
+// ── default scope ─────────────────────────────────────────────────────────────
+
+/// Returns the default global scope, pre-populated with C-aligned type values.
+///
+/// Each entry maps a C-style type name to a `DataValue::Type(SidType)`, making
+/// bare labels like `int`, `char`, etc. resolve to first-class type values.
+pub fn default_scope() -> HashMap<String, DataValue> {
+  let mut m = HashMap::new();
+  for (name, ty) in [
+    ("int",   SidType::Int),
+    ("char",  SidType::Char),
+    ("float", SidType::Float),
+    ("str",   SidType::Str),
+  ] {
+    m.insert(name.to_owned(), DataValue::Type(ty));
+  }
+  m
 }
 
 // ── c_load_header ─────────────────────────────────────────────────────────────
@@ -330,7 +350,7 @@ impl InterpretBuiltIn for Assert {
 struct PtrCast;
 
 impl InterpretBuiltIn for PtrCast {
-  fn arg_count(&self) -> u8 { 1 }
+  fn arg_count(&self) -> u8 { 2 }
   fn return_count(&self) -> u8 { 1 }
 
   fn execute(

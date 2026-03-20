@@ -26,7 +26,7 @@ clone!
 # Declare the size first and clone it, since malloc eats one copy
 4096 clone!
 # Then alloc, and clone since fgets eats one copy
-malloc! clone!
+malloc! string ptr_cast! clone!
 
 # fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*, but C
 # arguments are backwards in sid so we have them nearly in order. Just an
