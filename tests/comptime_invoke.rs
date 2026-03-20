@@ -2,19 +2,25 @@ use std::collections::HashMap;
 
 use sid::*;
 
+fn pop_arg(data_stack: &mut Vec<sid::TemplateValue>, name: &str) -> anyhow::Result<DataValue> {
+  match data_stack.pop() {
+    Some(TemplateValue::Literal(ProgramValue::Data(v))) => Ok(v),
+    Some(other) => anyhow::bail!("{}: argument is not a concrete value: {:?}", name, other),
+    None => anyhow::bail!("{}: expected an argument but the stack was empty", name),
+  }
+}
+
 // ── Mock builtins ────────────────────────────────────────────────────────────
 
 /// arg=1, ret=1: doubles an Int.
 #[derive(Debug)]
 struct MockDouble;
 impl InterpretBuiltIn for MockDouble {
-  fn arg_count(&self) -> u8 { 1 }
-  fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, arg: Option<DataValue>, _state: &mut GlobalState<'_>)
+  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
-    match arg {
-      Some(DataValue::Int(n)) => Ok(vec![DataValue::Int(n * 2)]),
+    match pop_arg(data_stack, "MockDouble")? {
+      DataValue::Int(n) => Ok(vec![DataValue::Int(n * 2)]),
       other => anyhow::bail!("MockDouble: expected Int, got {:?}", other),
     }
   }
@@ -24,11 +30,10 @@ impl InterpretBuiltIn for MockDouble {
 #[derive(Debug)]
 struct MockDrop;
 impl InterpretBuiltIn for MockDrop {
-  fn arg_count(&self) -> u8 { 1 }
-  fn return_count(&self) -> u8 { 0 }
-  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState<'_>)
+  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
+    pop_arg(data_stack, "MockDrop")?;
     Ok(vec![])
   }
 }
@@ -37,9 +42,7 @@ impl InterpretBuiltIn for MockDrop {
 #[derive(Debug)]
 struct MockConst;
 impl InterpretBuiltIn for MockConst {
-  fn arg_count(&self) -> u8 { 0 }
-  fn return_count(&self) -> u8 { 1 }
-  fn execute(&self, _arg: Option<DataValue>, _state: &mut GlobalState<'_>)
+  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>)
     -> anyhow::Result<Vec<DataValue>>
   {
     Ok(vec![DataValue::Int(42)])

@@ -54,29 +54,8 @@ pub fn comptime_pass(
         let builtin = builtins.get(fn_name.as_str())
           .ok_or_else(|| anyhow::anyhow!("Unknown comptime function: '{}'", fn_name))?;
 
-        // Pop argument if the function takes one.
-        let arg: Option<DataValue> = if builtin.arg_count() == 1 {
-          let arg_tv = stack.pop().ok_or_else(|| anyhow::anyhow!(
-            "@! '{}' expected an argument but the stack was empty", fn_name
-          ))?;
-          match arg_tv {
-            TemplateValue::Literal(ProgramValue::Data(v)) => Some(v),
-            TemplateValue::Literal(ProgramValue::Template(_)) => bail!(
-              "@! '{}': argument is an unrendered template. \
-               Did you mean to use a comptime template (@{{...}}, @[...], etc.)?",
-              fn_name
-            ),
-            other => bail!(
-              "@! '{}': argument must be a concrete value, got: {:?}",
-              fn_name, other
-            ),
-          }
-        } else {
-          None
-        };
-
         let mut gs = GlobalState::new(scope);
-        for result in builtin.execute(arg, &mut gs)? {
+        for result in builtin.execute(&mut stack, &mut gs)? {
           stack.push(TemplateValue::from(result));
         }
       }

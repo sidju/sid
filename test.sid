@@ -32,7 +32,8 @@ malloc! str ptr_cast! clone!
 # arguments are backwards in sid so we have them nearly in order. Just an
 # extra pointer copy to move back
 # Use templating to reorder the stack for fgets
-($1 $4 $3 $2)!
+($4 $3 $2 $1)!
+5 debug_stack!
 [$3 $2 $1] fgets !
 
 # And again for fclose, to keep the fgets retval out of our way

@@ -52,13 +52,9 @@ impl<'a> GlobalState<'a> {
 }
 
 pub trait InterpretBuiltIn: Debug {
-  /// Number of arguments popped from the data stack (0 or 1).
-  fn arg_count(&self) -> u8;
-  /// Number of values pushed back onto the data stack (0 or 1).
-  fn return_count(&self) -> u8;
   fn execute(
     &self,
-    arg: Option<DataValue>,
+    data_stack: &mut Vec<TemplateValue>,
     global_state: &mut GlobalState<'_>,
   ) -> Result<Vec<DataValue>>;
 }
