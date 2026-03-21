@@ -23,3 +23,17 @@ fn parse_bool() {
         expected_consumed: 0,
     }.test();
 }
+
+/// `@` must terminate a label so that `label@!` parses as `label` + `@!`
+/// and not as the single label `label@`.
+#[test]
+fn at_sign_terminates_label() {
+    ParseTestFixture {
+        input: "null@!",
+        expected_output: vec![
+            DataValue::Label("null".to_owned()).into(),
+            ProgramValue::ComptimeInvoke.into(),
+        ],
+        expected_consumed: 0,
+    }.test();
+}
