@@ -111,7 +111,7 @@ pub(super) fn parse_template_value(
 
 /// Characters that delimit tokens (not valid inside a bare label or number).
 pub(super) fn is_key_char(ch: &str) -> bool {
-    matches!(ch, " " | "\n" | "\t" | "," | "!" | "#" | ":" | ")" | "]" | "}" | ">")
+    matches!(ch, " " | "\n" | "\t" | "," | "!" | "#" | ":" | ")" | "]" | "}" | ">" | "@")
 }
 
 #[cfg(test)]
