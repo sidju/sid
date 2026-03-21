@@ -331,10 +331,14 @@ fn assert_error_on_non_bool() {
 #[test]
 fn c_load_header_available_at_comptime() {
     let builtins = get_comptime_builtins();
-    assert!(builtins.contains_key("c_load_header"), "c_load_header must be a comptime builtin");
-    assert!(builtins.contains_key("load_scope"), "load_scope must be a comptime builtin");
-    assert!(!builtins.contains_key("c_link_lib"), "c_link_lib must NOT be a comptime builtin");
-    assert!(!builtins.contains_key("clone"), "clone must NOT be a comptime builtin");
+    // must be present
+    for name in &["c_load_header", "load_scope", "clone", "drop", "eq", "assert", "not", "null", "ptr_cast", "debug_stack"] {
+        assert!(builtins.contains_key(name), "{name} must be a comptime builtin");
+    }
+    // must NOT be present
+    for name in &["c_link_lib", "ptr_read_cstr"] {
+        assert!(!builtins.contains_key(name), "{name} must NOT be a comptime builtin");
+    }
 }
 
 // ── load_scope builtin tests ──────────────────────────────────────────────────

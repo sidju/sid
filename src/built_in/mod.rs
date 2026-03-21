@@ -418,42 +418,50 @@ impl InterpretBuiltIn for DebugStack {
   }
 }
 
-pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretBuiltIn> {
-  static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
-  static C_LINK_LIB: CLinkLib = CLinkLib;
-  static LOAD_SCOPE: LoadScope = LoadScope;
-  static CLONE: Clone = Clone;
-  static DROP: Drop = Drop;
-  static EQ: Eq = Eq;
-  static ASSERT: Assert = Assert;
-  static NOT: Not = Not;
-  static NULL: Null = Null;
-  static PTR_CAST: PtrCast = PtrCast;
-  static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
-  static DEBUG_STACK: DebugStack = DebugStack;
-  let mut m: HashMap<&'static str, &'static dyn InterpretBuiltIn> = HashMap::new();
+// Module-level statics so both get_interpret_builtins and get_comptime_builtins
+// can reference them without duplicating declarations.
+static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
+static C_LINK_LIB:    CLinkLib    = CLinkLib;
+static LOAD_SCOPE:    LoadScope   = LoadScope;
+static CLONE:         Clone       = Clone;
+static DROP:          Drop        = Drop;
+static EQ:            Eq          = Eq;
+static ASSERT:        Assert      = Assert;
+static NOT:           Not         = Not;
+static NULL:          Null        = Null;
+static PTR_CAST:      PtrCast     = PtrCast;
+static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
+static DEBUG_STACK:   DebugStack  = DebugStack;
+
+/// Register the built-ins that are available at both runtime and comptime.
+///
+/// Runtime-only built-ins (`c_link_lib`, `ptr_read_cstr`) are NOT included here;
+/// add them separately in `get_interpret_builtins`.
+fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>) {
   m.insert("c_load_header", &C_LOAD_HEADER);
-  m.insert("c_link_lib", &C_LINK_LIB);
-  m.insert("load_scope", &LOAD_SCOPE);
-  m.insert("clone", &CLONE);
-  m.insert("drop", &DROP);
-  m.insert("eq", &EQ);
-  m.insert("assert", &ASSERT);
-  m.insert("not", &NOT);
-  m.insert("null", &NULL);
-  m.insert("ptr_cast", &PTR_CAST);
+  m.insert("load_scope",    &LOAD_SCOPE);
+  m.insert("clone",         &CLONE);
+  m.insert("drop",          &DROP);
+  m.insert("eq",            &EQ);
+  m.insert("assert",        &ASSERT);
+  m.insert("not",           &NOT);
+  m.insert("null",          &NULL);
+  m.insert("ptr_cast",      &PTR_CAST);
+  m.insert("debug_stack",   &DEBUG_STACK);
+}
+
+pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretBuiltIn> {
+  let mut m = HashMap::new();
+  register_shared(&mut m);
+  m.insert("c_link_lib",    &C_LINK_LIB);
   m.insert("ptr_read_cstr", &PTR_READ_CSTR);
-  m.insert("debug_stack", &DEBUG_STACK);
   m
 }
 
 /// The subset of interpret builtins available during the comptime pass.
 pub fn get_comptime_builtins() -> HashMap<&'static str, &'static dyn InterpretBuiltIn> {
-  static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
-  static LOAD_SCOPE: LoadScope = LoadScope;
-  let mut m: HashMap<&'static str, &'static dyn InterpretBuiltIn> = HashMap::new();
-  m.insert("c_load_header", &C_LOAD_HEADER);
-  m.insert("load_scope", &LOAD_SCOPE);
+  let mut m = HashMap::new();
+  register_shared(&mut m);
   m
 }
 

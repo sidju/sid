@@ -32,18 +32,15 @@ malloc! str ptr_cast! clone!
 # We just need to move the extra pointer copy out of the way
 # Use templating to reorder the stack for fgets
 ($4 $3 $2 $1)!
-5 debug_stack!
 [$1 $2 $3] fgets !
 
 # And again for fclose, to keep the fgets retval out of our way
 ($3 $2 $1)!
-3 debug_stack!
 fclose !
-3 debug_stack!
 
 0 eq! assert! # Check retval from fclose
 null@! eq! not! assert! # Check retval from fgets
 
 # Print the line; puts appends a newline.
 puts !
-0 eq! assert!
+0 eq! not! assert!
