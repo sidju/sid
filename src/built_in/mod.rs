@@ -237,6 +237,7 @@ impl InterpretBuiltIn for Drop {
 /// Built-in that tests two values for equality.
 ///
 /// Pops two values and returns `DataValue::Bool(a == b)`.
+/// The top of the stack is the right-hand side, the value below is the left.
 #[derive(Debug)]
 struct Eq;
 
@@ -246,14 +247,9 @@ impl InterpretBuiltIn for Eq {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
   ) -> anyhow::Result<Vec<DataValue>> {
-    match pop_arg(data_stack, "eq")? {
-      DataValue::List(mut items) if items.len() == 2 => {
-        let b = items.remove(1);
-        let a = items.remove(0);
-        Ok(vec![DataValue::Bool(a == b)])
-      }
-      other => anyhow::bail!("eq expects [a, b], got {:?}", other),
-    }
+    let b = pop_arg(data_stack, "eq")?;
+    let a = pop_arg(data_stack, "eq")?;
+    Ok(vec![DataValue::Bool(a == b)])
   }
 }
 

@@ -261,7 +261,10 @@ fn eq_equal_values_returns_true() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["eq"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::List(vec![DataValue::Int(3), DataValue::Int(3)])))], &mut state)
+        .execute(&mut vec![
+            sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
+            sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
+        ], &mut state)
         .expect("eq failed");
     assert_eq!(result, vec![DataValue::Bool(true)]);
 }
@@ -272,7 +275,10 @@ fn eq_unequal_values_returns_false() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["eq"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::List(vec![DataValue::Int(1), DataValue::Int(2)])))], &mut state)
+        .execute(&mut vec![
+            sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1))),
+            sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(2))),
+        ], &mut state)
         .expect("eq failed");
     assert_eq!(result, vec![DataValue::Bool(false)]);
 }
@@ -282,7 +288,10 @@ fn eq_error_on_wrong_arg() {
     let builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
-    let result = builtins["eq"].execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1)))], &mut state);
+    // Stack with only one value — should error
+    let result = builtins["eq"].execute(&mut vec![
+        sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1))),
+    ], &mut state);
     assert!(result.is_err());
 }
 

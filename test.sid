@@ -34,11 +34,12 @@ malloc! str ptr_cast! clone!
 ($4 $3 $2 $1)!
 5 debug_stack!
 [$1 $2 $3] fgets !
-1 debug_stack!
 
 # And again for fclose, to keep the fgets retval out of our way
-($2 $1)!
+($3 $2 $1)!
+3 debug_stack!
 fclose !
+3 debug_stack!
 
 0 eq! assert! # Check retval from fclose
 0 eq! assert! # Check retval from fgets
