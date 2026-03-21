@@ -1,4 +1,7 @@
 - Decide if we should favor in-crate or external tests
+- Probably add pointer_write, pointer_read and pointer_offset, to enable the
+  same basic pointer usage that C allows through base syntax `*(p+2)`.
+- Probably actually get to implementing if/else, match and loops.
 
 ## Built-in function wrapper (`src/built_in/`)
 
