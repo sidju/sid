@@ -42,7 +42,7 @@ fclose !
 3 debug_stack!
 
 0 eq! assert! # Check retval from fclose
-0 eq! assert! # Check retval from fgets
+null@! eq! not! assert! # Check retval from fgets
 
 # Print the line; puts appends a newline.
 puts !

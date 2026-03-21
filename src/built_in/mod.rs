@@ -276,6 +276,49 @@ impl InterpretBuiltIn for Assert {
   }
 }
 
+// ── not ───────────────────────────────────────────────────────────────────────
+
+/// Built-in that negates a boolean value.
+///
+/// Argument: `DataValue::Bool(b)`.
+/// Return:   `DataValue::Bool(!b)`.
+#[derive(Debug)]
+struct Not;
+
+impl InterpretBuiltIn for Not {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    match pop_arg(data_stack, "not")? {
+      DataValue::Bool(b) => Ok(vec![DataValue::Bool(!b)]),
+      other => anyhow::bail!("not expects Bool, got {:?}", other),
+    }
+  }
+}
+
+// ── null ──────────────────────────────────────────────────────────────────────
+
+/// Built-in that pushes a null pointer (`Pointer { addr: 0, pointee_ty: Any }`).
+///
+/// Useful for comparing C function return values against NULL, e.g.:
+/// ```text
+/// fgets_result  null  eq!  not!  assert!
+/// ```
+#[derive(Debug)]
+struct Null;
+
+impl InterpretBuiltIn for Null {
+  fn execute(
+    &self,
+    _data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    Ok(vec![DataValue::Pointer { addr: 0, pointee_ty: SidType::Any }])
+  }
+}
+
 // ── ptr_cast ──────────────────────────────────────────────────────────────────
 
 /// Built-in that re-types a pointer by replacing its pointee type.
@@ -383,6 +426,8 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   static DROP: Drop = Drop;
   static EQ: Eq = Eq;
   static ASSERT: Assert = Assert;
+  static NOT: Not = Not;
+  static NULL: Null = Null;
   static PTR_CAST: PtrCast = PtrCast;
   static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
   static DEBUG_STACK: DebugStack = DebugStack;
@@ -394,6 +439,8 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   m.insert("drop", &DROP);
   m.insert("eq", &EQ);
   m.insert("assert", &ASSERT);
+  m.insert("not", &NOT);
+  m.insert("null", &NULL);
   m.insert("ptr_cast", &PTR_CAST);
   m.insert("ptr_read_cstr", &PTR_READ_CSTR);
   m.insert("debug_stack", &DEBUG_STACK);
