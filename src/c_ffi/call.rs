@@ -238,8 +238,10 @@ fn call_fn_ptr(
             if ptr.is_null() {
                 None
             } else {
-                let cs = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_owned();
-                Some(DataValue::Str(cs))
+                Some(DataValue::Pointer {
+                    addr: ptr as usize,
+                    pointee_ty: SidType::Str,
+                })
             }
         }
         CType::Pointer(pointee_ty) => {

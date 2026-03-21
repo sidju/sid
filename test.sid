@@ -28,16 +28,16 @@ clone!
 # Then alloc, and clone since fgets eats one copy
 malloc! str ptr_cast! clone!
 
-# fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*, but C
-# arguments are backwards in sid so we have them nearly in order. Just an
-# extra pointer copy to move back
+# fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
+# We just need to move the extra pointer copy out of the way
 # Use templating to reorder the stack for fgets
 ($4 $3 $2 $1)!
 5 debug_stack!
-[$3 $2 $1] fgets !
+[$1 $2 $3] fgets !
+1 debug_stack!
 
 # And again for fclose, to keep the fgets retval out of our way
-($1 $2)!
+($2 $1)!
 fclose !
 
 0 eq! assert! # Check retval from fclose
