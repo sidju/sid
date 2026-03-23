@@ -55,7 +55,7 @@ pub fn comptime_pass(
           .ok_or_else(|| anyhow::anyhow!("Unknown comptime function: '{}'", fn_name))?;
 
         let mut gs = GlobalState::new(scope);
-        for result in builtin.execute(&mut stack, &mut gs)? {
+        for result in builtin.execute(&mut stack, &mut gs, &mut vec![])? {
           stack.push(TemplateValue::from(result));
         }
       }

@@ -3,6 +3,40 @@
   same basic pointer usage that C allows through base syntax `*(p+2)`.
 - Probably actually get to implementing if/else, match and loops.
 
+## Typed function invocation contract checking
+
+When invoking a `Substack` or `Script` that carries a `fn_type` annotation
+(`args: Some(…)` / `ret: Some(…)`), verify the contract at the call site:
+
+- **Args:** before execution, check that the top N items on the data stack
+  match the declared `args` types using `SidType::matches`.
+- **Ret:** after execution, check that the top M items on the data stack
+  match the declared `ret` types.
+
+Both checks should panic with a clear message naming the function and the
+mismatch. `None` on either dimension means that dimension is unchecked.
+
+## Local scope / label binding for typed functions
+
+When a typed function is invoked, its `args` names (if declared) should be
+bound into a local scope so the body can refer to them by label rather than
+by stack position. This requires:
+
+- A way to declare argument names alongside their types (e.g. paired with the
+  `typed_args` annotation, or via a separate `named_args` built-in).
+- Creating a local scope at invocation time, populated with the named args
+  popped from the data stack.
+- Tearing down the local scope on return and pushing return values back.
+
+This is the foundation for user-defined named functions.
+
+**Speculative approach:** instead of a list of types for `args`, accept a
+struct type mapping label to type (e.g. `{x: float, y: float}`). The field
+names become the local scope bindings and the field types are the type
+constraints. This would require struct types to have a defined field order so
+that stack positions can be mapped to names unambiguously — currently structs
+are unordered.
+
 ## Built-in function wrapper (`src/built_in/`)
 
 Implement a zero-boilerplate `wrap` adapter so any compatible Rust `Fn` can be

@@ -39,7 +39,7 @@ pub fn invoke<'a, 'b>(
   };
   match value {
     // Invoking a substack puts it on your program_stack and resumes execution
-    DataValue::Substack(mut s) => {
+    DataValue::Substack { body: mut s, .. } => {
       s.reverse();
       program_stack.append(&mut s);
     },
@@ -52,7 +52,7 @@ pub fn invoke<'a, 'b>(
     // arg_count/return_count determine stack interaction.
     DataValue::BuiltIn(function) => {
       let builtin = builtins[&function[..]];
-      for result in builtin.execute(data_stack, global_state)
+      for result in builtin.execute(data_stack, global_state, program_stack)
         .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
       {
         data_stack.push(TemplateValue::from(result));
@@ -162,5 +162,40 @@ pub fn interpret_one<'a, 'b>(
       &mut exe_state.global_state,
       builtins,
     ); },
+    PV::StackSizeAssert { expected_len, message } => {
+      if exe_state.data_stack.len() != expected_len {
+        panic!(
+          "{} (expected stack size {}, got {})",
+          message, expected_len, exe_state.data_stack.len()
+        );
+      }
+    },
+    PV::CondLoop { cond, body, expected_len } => {
+      if exe_state.data_stack.len() != expected_len + 1 {
+        panic!(
+          "loop condition must leave exactly one Bool on top (expected stack size {}, got {})",
+          expected_len + 1, exe_state.data_stack.len()
+        );
+      }
+      let bool_val = match exe_state.data_stack.pop() {
+        Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Bool(b)))) => b,
+        Some(other) => panic!(
+          "loop condition must leave a Bool on top of the stack, got {:?}", other
+        ),
+        None => unreachable!(),
+      };
+      if bool_val {
+        let mut body_rev: Vec<ProgramValue> = body.iter().rev().cloned().collect();
+        let mut cond_rev: Vec<ProgramValue> = cond.iter().rev().cloned().collect();
+        // Push in reverse execution order: CondLoop (last) → cond → StackSizeAssert → body (first).
+        exe_state.program_stack.push(PV::CondLoop { cond, body, expected_len });
+        exe_state.program_stack.append(&mut cond_rev);
+        exe_state.program_stack.push(PV::StackSizeAssert {
+          expected_len,
+          message: "loop body must leave the stack unchanged",
+        });
+        exe_state.program_stack.append(&mut body_rev);
+      }
+    },
   }
 }

@@ -56,6 +56,7 @@ pub trait InterpretBuiltIn: Debug {
     &self,
     data_stack: &mut Vec<TemplateValue>,
     global_state: &mut GlobalState<'_>,
+    program_stack: &mut Vec<ProgramValue>,
   ) -> Result<Vec<DataValue>>;
 }
 
@@ -91,9 +92,9 @@ pub enum DataValue {
   /// A packaged program sequence — the representation of functions/closures.
   /// Holds `ProgramValue`s rather than `DataValue`s so that un-rendered
   /// templates inside a substack are rendered only when the substack is invoked.
-  Substack(Vec<ProgramValue>),
+  Substack { body: Vec<ProgramValue>, args: Option<Vec<SidType>>, ret: Option<Vec<SidType>> },
   /// Like `Substack` but sequential execution is guaranteed (no concurrency).
-  Script(Vec<ProgramValue>),
+  Script { body: Vec<ProgramValue>, args: Option<Vec<SidType>>, ret: Option<Vec<SidType>> },
   List(Vec<DataValue>),
   Set(Vec<DataValue>),
   Struct(Vec<(String, DataValue)>),
@@ -113,14 +114,32 @@ pub enum DataValue {
 }
 
 /// A value on the program stack: either concrete data ready to push, a pending
-/// invocation (`!`), a compile-time invocation (`@!`), or an unrendered
-/// template containing substitution slots.
+/// invocation (`!`), a compile-time invocation (`@!`), an unrendered template,
+/// or a while-loop checkpoint.
 #[derive(PartialEq, Debug, Clone)]
 pub enum ProgramValue {
   Data(DataValue),
   Invoke,
   ComptimeInvoke,
   Template(Template),
+  /// Sentinel that asserts the data stack has exactly `expected_len` items when
+  /// popped. Panics with `message` if not. Useful anywhere a stack-size contract
+  /// must be enforced at a specific point — e.g. after a loop body to catch
+  /// net-non-zero bodies before the condition runs on a corrupt stack.
+  StackSizeAssert { expected_len: usize, message: &'static str },
+  /// Sentinel placed on the program stack after a `while_do`/`do_while` condition runs.
+  /// When popped it validates that the condition left exactly one `Bool` on top
+  /// (stack depth must equal `expected_len + 1`), then either re-queues
+  /// `body → cond → CondLoop` (true) or exits (false).
+  CondLoop {
+    cond: Vec<ProgramValue>,
+    body: Vec<ProgramValue>,
+    /// Stack depth recorded immediately after popping the condition and body
+    /// substacks — i.e. the "loop state" size. The condition must leave this
+    /// many items plus exactly one `Bool` on top; the body must leave exactly
+    /// this many items (net zero change).
+    expected_len: usize,
+  },
 }
 
 impl From<DataValue> for ProgramValue {

@@ -49,7 +49,7 @@ fn render_empty_substack() {
     vec![],
     // Expected rendered stack
     vec![
-      DataValue::Substack(vec![]).into(),
+      DataValue::Substack { body: vec![], args: None, ret: None }.into(),
     ],
   )
 }
@@ -84,12 +84,12 @@ fn render_substack() {
     vec![DataValue::Bool(true).into()],
     // Expected rendered stack
     vec![
-      DataValue::Substack(vec![
+      DataValue::Substack { body: vec![
         DataValue::Int(2).into(),
         DataValue::Int(1).into(),
         DataValue::Label("add".to_string()).into(),
         ProgramValue::Invoke.into(),
-      ]).into(),
+      ], args: None, ret: None }.into(),
     ],
   )
 }
@@ -172,8 +172,8 @@ fn render_script() {
     HashMap::new(),
     HashMap::new(),
     vec![],
-    vec![DataValue::Script(vec![
+    vec![DataValue::Script { body: vec![
       ProgramValue::Data(DataValue::Int(42)),
-    ])],
+    ], args: None, ret: None }],
   )
 }

@@ -55,9 +55,9 @@ fn comptime_substack_rendered_eagerly() {
   let ct = Template::substack((vec![DataValue::Int(7).into()], 0)).mark_comptime();
   ComptimePassFixture {
     input: vec![TemplateValue::Literal(ProgramValue::Template(ct))],
-    expected_output: vec![TemplateValue::from(DataValue::Substack(vec![
+    expected_output: vec![TemplateValue::from(DataValue::Substack { body: vec![
       ProgramValue::Data(DataValue::Int(7)),
-    ]))],
+    ], args: None, ret: None })],
   }.test(&no_builtins());
 }
 

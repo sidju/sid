@@ -24,8 +24,8 @@ impl ToSyntax for DataValue {
       DataValue::Char(v) => format!("\'{}\'", v),
       DataValue::Int(v) => v.to_string(),
       DataValue::Float(v) => v.to_string(),
-      DataValue::Substack(v) => list_to_syntax(v, "(", ")"),
-      DataValue::Script(v) => list_to_syntax(v, "<", ">"),
+      DataValue::Substack { body: v, .. } => list_to_syntax(v, "(", ")"),
+      DataValue::Script { body: v, .. } => list_to_syntax(v, "<", ">"),
       DataValue::List(v) => list_to_syntax(v, "[", "]"),
       DataValue::Set(v) => list_to_syntax(v, "{", "}"),
       DataValue::Struct(fields) => {
@@ -58,6 +58,14 @@ impl ToSyntax for ProgramValue {
       ProgramValue::Invoke => "!".to_owned(),
       ProgramValue::ComptimeInvoke => "@!".to_owned(),
       ProgramValue::Template(v) => v.data.to_syntax(),
+      ProgramValue::StackSizeAssert { expected_len, message } => {
+        format!("# stack size assert: {} == {} items\n", message, expected_len)
+      },
+      ProgramValue::CondLoop { cond, body, .. } => {
+        let cond_syntax: String = cond.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
+        let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
+        format!("({}) ({}) while_do !", cond_syntax, body_syntax)
+      },
     }
   }
 }
@@ -102,7 +110,18 @@ impl ToSyntax for SidType {
       SidType::Any   => "Any".to_owned(),
       SidType::List(elem)             => format!("{} list @!", elem.to_syntax()),
       SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
-      SidType::Fn { args, ret }       => format!("{} {} fn_type @!", args.to_syntax(), ret.to_syntax()),
+      SidType::Fn { args, ret } => {
+        let mut s = "fn".to_owned();
+        if let Some(ts) = args {
+          let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
+          s = format!("{} [{}] typed_args @!", s, inner);
+        }
+        if let Some(ts) = ret {
+          let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
+          s = format!("{} [{}] typed_rets @!", s, inner);
+        }
+        s
+      },
       SidType::Pointer(pointee)       => format!("{} ptr @!", pointee.to_syntax()),
       SidType::Literal(v)             => v.to_syntax(),
       SidType::Union(types) => {

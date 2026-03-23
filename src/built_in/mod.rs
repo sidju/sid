@@ -39,10 +39,12 @@ fn pop_arg(
 pub fn default_scope() -> HashMap<String, DataValue> {
   let mut m = HashMap::new();
   for (name, ty) in [
+    ("bool",  SidType::Bool),
     ("int",   SidType::Int),
     ("char",  SidType::Char),
     ("float", SidType::Float),
     ("str",   SidType::Str),
+    ("Any",   SidType::Any),
   ] {
     m.insert(name.to_owned(), DataValue::Type(ty));
   }
@@ -73,6 +75,7 @@ impl InterpretBuiltIn for CLoadHeader {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let arg = pop_arg(data_stack, "c_load_header")?;
     let (header_path, lib_name) = parse_load_header_arg(arg)?;
@@ -138,6 +141,7 @@ impl InterpretBuiltIn for CLinkLib {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let arg = pop_arg(data_stack, "c_link_lib")?;
     let (lib_path, lib_name) = parse_link_lib_arg(arg)?;
@@ -184,6 +188,7 @@ impl InterpretBuiltIn for LoadScope {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let fields = match pop_arg(data_stack, "load_scope")? {
       DataValue::Struct(f) => f,
@@ -209,6 +214,7 @@ impl InterpretBuiltIn for Clone {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let v = pop_arg(data_stack, "clone")?;
     Ok(vec![v.clone(), v])
@@ -226,6 +232,7 @@ impl InterpretBuiltIn for Drop {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     pop_arg(data_stack, "drop")?;
     Ok(vec![])
@@ -246,6 +253,7 @@ impl InterpretBuiltIn for Eq {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let b = pop_arg(data_stack, "eq")?;
     let a = pop_arg(data_stack, "eq")?;
@@ -267,6 +275,7 @@ impl InterpretBuiltIn for Assert {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "assert")? {
       DataValue::Bool(true)  => Ok(vec![]),
@@ -290,6 +299,7 @@ impl InterpretBuiltIn for Not {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "not")? {
       DataValue::Bool(b) => Ok(vec![DataValue::Bool(!b)]),
@@ -314,6 +324,7 @@ impl InterpretBuiltIn for Null {
     &self,
     _data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     Ok(vec![DataValue::Pointer { addr: 0, pointee_ty: SidType::Any }])
   }
@@ -335,6 +346,7 @@ impl InterpretBuiltIn for PtrCast {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let new_type = pop_arg(data_stack, "ptr_cast")?;
     let pointer  = pop_arg(data_stack, "ptr_cast")?;
@@ -372,6 +384,7 @@ impl InterpretBuiltIn for PtrReadCstr {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "ptr_read_cstr")? {
       DataValue::Pointer { addr, .. } => {
@@ -402,6 +415,7 @@ impl InterpretBuiltIn for DebugStack {
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let n = match pop_arg(data_stack, "debug_stack")? {
       DataValue::Int(n) if n >= 0 => n as usize,
@@ -415,6 +429,241 @@ impl InterpretBuiltIn for DebugStack {
       eprintln!("  {:?}", entry);
     }
     Ok(vec![])
+  }
+}
+
+// ── while_do ──────────────────────────────────────────────────────────────────
+
+/// Built-in that checks a condition first, then loops the body while it holds.
+///
+/// Usage: `state... (cond_substack) (body_substack) while_do !`
+/// Reads naturally as "while `cond`, do `body`": condition is below body on
+/// the stack, matching the left-to-right reading order of the call.
+///
+/// Schedules `cond → CondLoop`. Each time `CondLoop` fires and the condition
+/// is true, it re-schedules `body → cond → CondLoop`; on false the loop exits.
+/// The body may never run if the condition is false on the first check.
+///
+/// Stack contract:
+///   - Condition: net +1 (leaves one `Bool` on top, all other items unchanged).
+///   - Body: net 0 (leaves the stack exactly as it found it).
+#[derive(Debug)]
+struct WhileDo;
+
+impl InterpretBuiltIn for WhileDo {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let body_val = pop_arg(data_stack, "while_do")?;
+    let cond_val = pop_arg(data_stack, "while_do")?;
+    let body = match body_val {
+      DataValue::Substack { body: s, .. } => s,
+      other => anyhow::bail!("while_do: body must be a Substack, got {:?}", other),
+    };
+    let cond = match cond_val {
+      DataValue::Substack { body: s, .. } => s,
+      other => anyhow::bail!("while_do: condition must be a Substack, got {:?}", other),
+    };
+    let expected_len = data_stack.len();
+    // Schedule: cond runs first, then CondLoop checks the bool.
+    program_stack.push(crate::ProgramValue::CondLoop { cond: cond.clone(), body, expected_len });
+    let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
+    program_stack.append(&mut cond_rev);
+    Ok(vec![])
+  }
+}
+
+// ── do_while ──────────────────────────────────────────────────────────────────
+
+/// Built-in that runs the body once unconditionally, then loops while the
+/// condition holds.
+///
+/// Usage: `state... (body_substack) (cond_substack) do_while !`
+/// Reads naturally as "do `body`, while `cond`": body is below condition on
+/// the stack, matching the left-to-right reading order of the call.
+///
+/// Schedules `body → cond → CondLoop` so the body always executes at least
+/// once. Subsequent iterations behave identically to `while_do`.
+///
+/// Stack contract:
+///   - Condition: net +1 (leaves one `Bool` on top, all other items unchanged).
+///   - Body: net 0 (leaves the stack exactly as it found it).
+#[derive(Debug)]
+struct DoWhile;
+
+impl InterpretBuiltIn for DoWhile {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let cond_val = pop_arg(data_stack, "do_while")?;
+    let body_val = pop_arg(data_stack, "do_while")?;
+    let cond = match cond_val {
+      DataValue::Substack { body: s, .. } => s,
+      other => anyhow::bail!("do_while: condition must be a Substack, got {:?}", other),
+    };
+    let body = match body_val {
+      DataValue::Substack { body: s, .. } => s,
+      other => anyhow::bail!("do_while: body must be a Substack, got {:?}", other),
+    };
+    let expected_len = data_stack.len();
+    // Schedule: body runs first, then StackSizeAssert checks it, then cond, then CondLoop.
+    program_stack.push(crate::ProgramValue::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
+    let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
+    let mut body_rev: Vec<crate::ProgramValue> = body.iter().rev().cloned().collect();
+    program_stack.append(&mut cond_rev);
+    program_stack.push(crate::ProgramValue::StackSizeAssert {
+      expected_len,
+      message: "loop body must leave the stack unchanged",
+    });
+    program_stack.append(&mut body_rev);
+    Ok(vec![])
+  }
+}
+
+// ── fn / typed_args / typed_rets / untyped_args / untyped_rets ───────────────
+
+/// Extracts a `Vec<SidType>` from a `DataValue::List` where every element is
+/// `DataValue::Type(...)`. Returns an error if any element is not a type.
+fn list_to_type_vec(list: DataValue, ctx: &str) -> anyhow::Result<Vec<SidType>> {
+  match list {
+    DataValue::List(items) => items.into_iter().map(|v| match v {
+      DataValue::Type(t) => Ok(t),
+      other => anyhow::bail!("{}: expected a list of types, got {:?}", ctx, other),
+    }).collect(),
+    other => anyhow::bail!("{}: expected a List of types, got {:?}", ctx, other),
+  }
+}
+
+/// Pushes `DataValue::Type(SidType::Fn { args: None, ret: None })` — an
+/// unconstrained callable type. Use `typed_args`/`typed_rets` to narrow it.
+#[derive(Debug)]
+struct FnType;
+
+impl InterpretBuiltIn for FnType {
+  fn execute(
+    &self,
+    _data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    Ok(vec![DataValue::Type(SidType::Fn { args: None, ret: None })])
+  }
+}
+
+/// Sets the `args` type annotation on a `Substack`/`Script` or `SidType::Fn`.
+///
+/// Usage: `callable [T1 T2 …] typed_args !`
+/// Pops the list of types (top), then the callable; returns it with args set.
+#[derive(Debug)]
+struct TypedArgs;
+
+impl InterpretBuiltIn for TypedArgs {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let types_val  = pop_arg(data_stack, "typed_args")?;
+    let target_val = pop_arg(data_stack, "typed_args")?;
+    let types = list_to_type_vec(types_val, "typed_args")?;
+    match target_val {
+      DataValue::Substack { body, ret, .. } =>
+        Ok(vec![DataValue::Substack { body, args: Some(types), ret }]),
+      DataValue::Script { body, ret, .. } =>
+        Ok(vec![DataValue::Script { body, args: Some(types), ret }]),
+      DataValue::Type(SidType::Fn { ret, .. }) =>
+        Ok(vec![DataValue::Type(SidType::Fn { args: Some(types), ret })]),
+      other => anyhow::bail!("typed_args: expected Substack, Script, or Fn type, got {:?}", other),
+    }
+  }
+}
+
+/// Sets the `ret` type annotation on a `Substack`/`Script` or `SidType::Fn`.
+///
+/// Usage: `callable [T1 T2 …] typed_rets !`
+#[derive(Debug)]
+struct TypedRets;
+
+impl InterpretBuiltIn for TypedRets {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let types_val  = pop_arg(data_stack, "typed_rets")?;
+    let target_val = pop_arg(data_stack, "typed_rets")?;
+    let types = list_to_type_vec(types_val, "typed_rets")?;
+    match target_val {
+      DataValue::Substack { body, args, .. } =>
+        Ok(vec![DataValue::Substack { body, args, ret: Some(types) }]),
+      DataValue::Script { body, args, .. } =>
+        Ok(vec![DataValue::Script { body, args, ret: Some(types) }]),
+      DataValue::Type(SidType::Fn { args, .. }) =>
+        Ok(vec![DataValue::Type(SidType::Fn { args, ret: Some(types) })]),
+      other => anyhow::bail!("typed_rets: expected Substack, Script, or Fn type, got {:?}", other),
+    }
+  }
+}
+
+/// Clears the `args` type annotation (sets it to `None`) on a `Substack`/`Script`
+/// or `SidType::Fn`.
+///
+/// Usage: `callable untyped_args !`
+#[derive(Debug)]
+struct UntypedArgs;
+
+impl InterpretBuiltIn for UntypedArgs {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let target_val = pop_arg(data_stack, "untyped_args")?;
+    match target_val {
+      DataValue::Substack { body, ret, .. } =>
+        Ok(vec![DataValue::Substack { body, args: None, ret }]),
+      DataValue::Script { body, ret, .. } =>
+        Ok(vec![DataValue::Script { body, args: None, ret }]),
+      DataValue::Type(SidType::Fn { ret, .. }) =>
+        Ok(vec![DataValue::Type(SidType::Fn { args: None, ret })]),
+      other => anyhow::bail!("untyped_args: expected Substack, Script, or Fn type, got {:?}", other),
+    }
+  }
+}
+
+/// Clears the `ret` type annotation (sets it to `None`) on a `Substack`/`Script`
+/// or `SidType::Fn`.
+///
+/// Usage: `callable untyped_rets !`
+#[derive(Debug)]
+struct UntypedRets;
+
+impl InterpretBuiltIn for UntypedRets {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let target_val = pop_arg(data_stack, "untyped_rets")?;
+    match target_val {
+      DataValue::Substack { body, args, .. } =>
+        Ok(vec![DataValue::Substack { body, args, ret: None }]),
+      DataValue::Script { body, args, .. } =>
+        Ok(vec![DataValue::Script { body, args, ret: None }]),
+      DataValue::Type(SidType::Fn { args, .. }) =>
+        Ok(vec![DataValue::Type(SidType::Fn { args, ret: None })]),
+      other => anyhow::bail!("untyped_rets: expected Substack, Script, or Fn type, got {:?}", other),
+    }
   }
 }
 
@@ -432,6 +681,13 @@ static NULL:          Null        = Null;
 static PTR_CAST:      PtrCast     = PtrCast;
 static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
 static DEBUG_STACK:   DebugStack  = DebugStack;
+static WHILE_DO:         WhileDo        = WhileDo;
+static DO_WHILE:         DoWhile        = DoWhile;
+static FN_TYPE:          FnType         = FnType;
+static TYPED_ARGS:       TypedArgs      = TypedArgs;
+static TYPED_RETS:       TypedRets      = TypedRets;
+static UNTYPED_ARGS:     UntypedArgs    = UntypedArgs;
+static UNTYPED_RETS:     UntypedRets    = UntypedRets;
 
 /// Register the built-ins that are available at both runtime and comptime.
 ///
@@ -446,8 +702,13 @@ fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>)
   m.insert("assert",        &ASSERT);
   m.insert("not",           &NOT);
   m.insert("null",          &NULL);
-  m.insert("ptr_cast",      &PTR_CAST);
-  m.insert("debug_stack",   &DEBUG_STACK);
+  m.insert("ptr_cast",        &PTR_CAST);
+  m.insert("debug_stack",     &DEBUG_STACK);
+  m.insert("fn",              &FN_TYPE);
+  m.insert("typed_args",      &TYPED_ARGS);
+  m.insert("typed_rets",      &TYPED_RETS);
+  m.insert("untyped_args",    &UNTYPED_ARGS);
+  m.insert("untyped_rets",    &UNTYPED_RETS);
 }
 
 pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretBuiltIn> {
@@ -455,6 +716,8 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   register_shared(&mut m);
   m.insert("c_link_lib",    &C_LINK_LIB);
   m.insert("ptr_read_cstr", &PTR_READ_CSTR);
+  m.insert("while_do",      &WHILE_DO);
+  m.insert("do_while",      &DO_WHILE);
   m
 }
 

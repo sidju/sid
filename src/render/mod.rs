@@ -47,6 +47,8 @@ fn program_values_to_data_values(program_values: Vec<ProgramValue>) -> Vec<DataV
     ProgramValue::Data(v) => v,
     ProgramValue::Invoke | ProgramValue::ComptimeInvoke => panic!("Invoke token found where a data value was expected"),
     ProgramValue::Template(_) => panic!("Unrendered template found where a data value was expected"),
+    ProgramValue::CondLoop { .. } => panic!("CondLoop sentinel found where a data value was expected"),
+    ProgramValue::StackSizeAssert { .. } => panic!("StackSizeAssert sentinel found where a data value was expected"),
   }).collect()
 }
 
@@ -70,12 +72,16 @@ pub fn render_template(
 
   use TemplateData as TD;
   let rendered_template: DataValue = match template.data {
-    TD::Substack(source) => DataValue::Substack(
-      resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_scope)
-    ),
-    TD::Script(source) => DataValue::Script(
-      resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_scope)
-    ),
+    TD::Substack(source) => DataValue::Substack {
+      body: resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_scope),
+      args: None,
+      ret: None,
+    },
+    TD::Script(source) => DataValue::Script {
+      body: resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_scope),
+      args: None,
+      ret: None,
+    },
     TD::List(source) => {
       let pvs = resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_scope);
       DataValue::List(program_values_to_data_values(pvs))
