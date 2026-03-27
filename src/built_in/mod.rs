@@ -7,6 +7,7 @@ use crate::DataValue;
 use crate::GlobalState;
 use crate::SidType;
 use crate::c_ffi::{parse_c_header, open_library};
+use crate::types::get_from_scope;
 
 /// Convert a `CString` to a `String`, falling back to lossy UTF-8 conversion.
 fn cstring_to_string(cs: CString) -> String {
@@ -371,8 +372,8 @@ impl InterpretBuiltIn for PtrCast {
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
-    _local_scope: &mut HashMap<String, DataValue>,
-    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let new_type = pop_arg(data_stack, "ptr_cast")?;
     let pointer  = pop_arg(data_stack, "ptr_cast")?;
@@ -382,10 +383,9 @@ impl InterpretBuiltIn for PtrCast {
     };
     let pointee_ty = match new_type {
       DataValue::Type(ty) => ty,
-      DataValue::Label(name) => match global_state.scope.get(&name) {
-        Some(DataValue::Type(ty)) => ty.clone(),
-        Some(other) => anyhow::bail!("ptr_cast: label '{}' resolves to {:?}, not a Type", name, other),
-        None => anyhow::bail!("ptr_cast: undefined label '{}'", name),
+      DataValue::Label(name) => match get_from_scope(&name, Some(local_scope), global_state.scope, builtins)? {
+        DataValue::Type(ty) => ty,
+        other => anyhow::bail!("ptr_cast: label '{}' resolves to {:?}, not a Type", name, other),
       },
       other => anyhow::bail!("ptr_cast: type argument must be a Type or label, got {:?}", other),
     };
@@ -839,20 +839,13 @@ impl InterpretBuiltIn for Match {
     global_state: &mut GlobalState<'_>,
     program_stack: &mut Vec<crate::ProgramValue>,
     local_scope: &mut HashMap<String, DataValue>,
-    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let cases_raw = pop_arg(data_stack, "match")?;
-    // Resolve a label to its value in local or global scope.
+    // Resolve a label to its value, supporting dot-notation namespaces.
     let cases_val = match cases_raw {
-      DataValue::Label(ref l) => {
-        if let Some(v) = local_scope.get(l.as_str()) {
-          v.clone()
-        } else if let Some(v) = global_state.scope.get(l.as_str()) {
-          v.clone()
-        } else {
-          anyhow::bail!("match: undefined label '{}'", l)
-        }
-      },
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+        .map_err(|_| anyhow::anyhow!("match: undefined label '{}'", l))?,
       other => other,
     };
     let value = pop_arg(data_stack, "match")?;

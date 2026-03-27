@@ -26,7 +26,7 @@ clone!
 # Declare the size first and clone it, since malloc eats one copy
 4096 clone!
 # Then alloc, and clone since fgets eats one copy
-malloc! str ptr_cast! clone!
+malloc! types.str ptr_cast! clone!
 
 # fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
 # We just need to move the extra pointer copy out of the way
