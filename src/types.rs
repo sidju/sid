@@ -51,12 +51,58 @@ impl<'a> GlobalState<'a> {
   }
 }
 
+/// Look up a label in scope, with support for dot-separated field access on structs.
+///
+/// `a.b.c` resolves `a` from scope, then walks `.b`, then `.c` as struct field
+/// accesses. Any number of segments is supported.
+///
+/// Resolution order (highest to lowest priority):
+/// 1. Local scope (if provided — absent at comptime).
+/// 2. Global scope.
+/// 3. Built-ins: any matching single-segment label returns `DataValue::BuiltIn`.
+///    Pass `None` when no built-ins are relevant (e.g. pure render tests).
+///
+/// Returns an error if the root name is absent from all three, or if any
+/// intermediate segment targets a non-struct or a missing field.
+pub fn get_from_scope(
+  label: &str,
+  local: Option<&HashMap<String, DataValue>>,
+  global: &HashMap<String, DataValue>,
+  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+) -> anyhow::Result<DataValue> {
+  let mut segments = label.split('.');
+  let root = segments.next().unwrap();
+
+  let mut current = local.and_then(|l| l.get(root))
+    .or_else(|| global.get(root))
+    .cloned()
+    .or_else(|| builtins.contains_key(root).then(|| DataValue::BuiltIn(root.to_owned())))
+    .ok_or_else(|| anyhow::anyhow!("undefined label '{}'", label))?;
+
+  for segment in segments {
+    current = match current {
+      DataValue::Map(entries) => entries
+        .into_iter()
+        .find(|(k, _)| matches!(k, DataValue::Label(n) if n == segment))
+        .map(|(_, v)| v)
+        .ok_or_else(|| anyhow::anyhow!("label '{}': field '{}' not found", label, segment))?,
+      other => anyhow::bail!(
+        "label '{}': expected a label-keyed Map for field '{}', got {:?}",
+        label, segment, other
+      ),
+    };
+  }
+  Ok(current)
+}
+
 pub trait InterpretBuiltIn: Debug {
   fn execute(
     &self,
     data_stack: &mut Vec<TemplateValue>,
     global_state: &mut GlobalState<'_>,
     program_stack: &mut Vec<ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> Result<Vec<DataValue>>;
 }
 
@@ -92,12 +138,26 @@ pub enum DataValue {
   /// A packaged program sequence — the representation of functions/closures.
   /// Holds `ProgramValue`s rather than `DataValue`s so that un-rendered
   /// templates inside a substack are rendered only when the substack is invoked.
-  Substack { body: Vec<ProgramValue>, args: Option<Vec<SidType>>, ret: Option<Vec<SidType>> },
+  ///
+  /// `args[0]`/`ret[0]` = **top** of stack; `[N-1]` = deepest checked item.
+  ///
+  /// `args` uses named fields: each entry is `(name, type)`.  At call time the
+  /// types are checked and the names are bound into the callee's local scope.
+  Substack { body: Vec<ProgramValue>, args: Option<Vec<(String, SidType)>>, ret: Option<Vec<SidType>> },
   /// Like `Substack` but sequential execution is guaranteed (no concurrency).
-  Script { body: Vec<ProgramValue>, args: Option<Vec<SidType>>, ret: Option<Vec<SidType>> },
+  ///
+  /// `args[0]`/`ret[0]` = **top** of stack; `[N-1]` = deepest checked item.
+  ///
+  /// `args` uses named fields: each entry is `(name, type)`.  At call time the
+  /// types are checked and the names are bound into the callee's local scope.
+  Script { body: Vec<ProgramValue>, args: Option<Vec<(String, SidType)>>, ret: Option<Vec<SidType>> },
   List(Vec<DataValue>),
   Set(Vec<DataValue>),
-  Struct(Vec<(String, DataValue)>),
+  /// An ordered sequence of key-value pairs.  When all keys are
+  /// `DataValue::Label`, this serves as a struct (named fields, dot-label
+  /// access); when keys are arbitrary values, it is a true heterogeneous map.
+  /// Both forms are ordered and structurally identical — the distinction is
+  /// purely in the key type.
   Map(Vec<(DataValue, DataValue)>),
   BuiltIn(String),
   Type(SidType),
@@ -111,6 +171,27 @@ pub enum DataValue {
   /// Stored in scope under the function's name by `c_load_header`.
   /// Replaced with `CFunction` when `c_link_lib` resolves it against a library.
   CFuncSig(CFuncSig),
+  /// Interpreter-internal sentinel pushed onto the **data** stack to mark the
+  /// boundary below a typed substack's arguments.  Acts as a hard floor: if any
+  /// operation tries to use `StackBlock` as a real value the program panics.
+  /// Removed by the corresponding `TypeCheck { block_placed: true }` sentinel
+  /// after the substack body completes.
+  StackBlock,
+}
+
+impl DataValue {
+  /// Test whether `self`, used as a **pattern**, matches `value`.
+  ///
+  /// - If `self` is `DataValue::Type(t)`, delegates to `t.matches(value)`.
+  /// - Otherwise wraps `self` in `SidType::Literal` and delegates, which
+  ///   handles List-as-tuple, Set-as-enum, Map/Struct structural checks,
+  ///   and exact equality for everything else.
+  pub fn pattern_matches(&self, value: &DataValue) -> bool {
+    match self {
+      DataValue::Type(t) => t.matches(value),
+      other => SidType::Literal(Box::new(other.clone())).matches(value),
+    }
+  }
 }
 
 /// A value on the program stack: either concrete data ready to push, a pending
@@ -140,6 +221,31 @@ pub enum ProgramValue {
     /// this many items (net zero change).
     expected_len: usize,
   },
+  /// Sentinel placed on the program stack to validate the data stack (and
+  /// optionally clean up a `StackBlock`) when popped.
+  ///
+  /// - `types`: if `Some`, the types that must match the return window.
+  ///   `types[0]` = top of window, `types[N-1]` = deepest.
+  ///   If `None`, no type checking is performed — the sentinel only cleans up
+  ///   the `StackBlock`.
+  /// - `context`: included in any panic message to identify the call site.
+  /// - `block_placed`: if `true`, find and remove the nearest `StackBlock`
+  ///   from the data stack.  When `types` is also `Some`, every item above the
+  ///   block is checked against the declared types (strict count match).
+  ///   If `false`, `types` is checked against the top `types.len()` items of
+  ///   the full stack (legacy behaviour, used when only `ret` is declared).
+  TypeCheck { types: Option<Vec<SidType>>, context: String, block_placed: bool },
+  /// Saves the current local scope onto the scope stack and installs a fresh
+  /// empty scope.  Paired with `PopScope`.  Every substack body is wrapped in
+  /// `PushScope` / `PopScope` to isolate its local bindings.
+  ///
+  /// `names` holds the field names for the callee's declared `args` (top-first).
+  /// When non-empty, `PushScope` pops that many items from the data stack and
+  /// binds them into the new local scope under the corresponding names before
+  /// the body begins.  Empty when the callee has no named args.
+  PushScope { names: Vec<String> },
+  /// Restores the local scope saved by the matching `PushScope`.
+  PopScope,
 }
 
 impl From<DataValue> for ProgramValue {

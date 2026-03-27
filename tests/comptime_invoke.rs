@@ -16,7 +16,7 @@ fn pop_arg(data_stack: &mut Vec<sid::TemplateValue>, name: &str) -> anyhow::Resu
 #[derive(Debug)]
 struct MockDouble;
 impl InterpretBuiltIn for MockDouble {
-  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>)
+  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>, _local_scope: &mut HashMap<String, sid::DataValue>, _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>)
     -> anyhow::Result<Vec<DataValue>>
   {
     match pop_arg(data_stack, "MockDouble")? {
@@ -30,7 +30,7 @@ impl InterpretBuiltIn for MockDouble {
 #[derive(Debug)]
 struct MockDrop;
 impl InterpretBuiltIn for MockDrop {
-  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>)
+  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>, _local_scope: &mut HashMap<String, sid::DataValue>, _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>)
     -> anyhow::Result<Vec<DataValue>>
   {
     pop_arg(data_stack, "MockDrop")?;
@@ -42,7 +42,7 @@ impl InterpretBuiltIn for MockDrop {
 #[derive(Debug)]
 struct MockConst;
 impl InterpretBuiltIn for MockConst {
-  fn execute(&self, data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>)
+  fn execute(&self, _data_stack: &mut Vec<sid::TemplateValue>, _state: &mut GlobalState<'_>, _program_stack: &mut Vec<sid::ProgramValue>, _local_scope: &mut HashMap<String, sid::DataValue>, _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>)
     -> anyhow::Result<Vec<DataValue>>
   {
     Ok(vec![DataValue::Int(42)])

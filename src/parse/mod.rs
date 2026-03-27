@@ -36,7 +36,14 @@ pub fn parse_program_sequence(
     let mut out: Vec<TemplateValue> = Vec::new();
     let mut max_consumed = 0usize;
     loop {
-        // Check for the terminator first; consume it and stop.
+        // Skip insignificant whitespace and commas before checking the terminator.
+        // Without this, `( ... ) ` would fail because `parse_template_value` sees
+        // whitespace, skips it, then bails on the `)` before the parent loop can
+        // match it as the terminator.
+        while matches!(iter.peek().map(|x| *x), Some(" ") | Some("\n") | Some("\t") | Some(",")) {
+            iter.next();
+        }
+        // Check for the terminator; consume it and stop.
         if terminator == iter.peek().map(|x| *x) {
             iter.next();
             return Ok((out, max_consumed));

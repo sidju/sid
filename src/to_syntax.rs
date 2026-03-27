@@ -28,12 +28,6 @@ impl ToSyntax for DataValue {
       DataValue::Script { body: v, .. } => list_to_syntax(v, "<", ">"),
       DataValue::List(v) => list_to_syntax(v, "[", "]"),
       DataValue::Set(v) => list_to_syntax(v, "{", "}"),
-      DataValue::Struct(fields) => {
-        let inner = fields.iter()
-          .map(|(k, v)| format!("{}: {}", k, v.to_syntax()))
-          .collect::<Vec<_>>().join(", ");
-        format!("{{{}}}", inner)
-      },
       DataValue::Map(entries) => {
         let inner = entries.iter()
           .map(|(k, v)| format!("{}: {}", k.to_syntax(), v.to_syntax()))
@@ -47,6 +41,7 @@ impl ToSyntax for DataValue {
       DataValue::Pointer { addr, pointee_ty } =>
         format!("<Pointer 0x{:x} : {}>", addr, pointee_ty.to_syntax()),
       DataValue::CFuncSig(sig) => format!("<CFuncSig {}>", sig.name),
+      DataValue::StackBlock => "# <StackBlock>\n".to_owned(),
     }
   }
 }
@@ -66,6 +61,21 @@ impl ToSyntax for ProgramValue {
         let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
         format!("({}) ({}) while_do !", cond_syntax, body_syntax)
       },
+      ProgramValue::TypeCheck { types, context, block_placed } => {
+        let types_syntax: String = match types {
+          Some(ts) => ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" "),
+          None => "<none>".to_owned(),
+        };
+        format!("# type check ({}): [{}] block_placed={}\n", context, types_syntax, block_placed)
+      },
+      ProgramValue::PushScope { names } => {
+        if names.is_empty() {
+          "# push scope\n".to_owned()
+        } else {
+          format!("# push scope (bind: {})\n", names.join(", "))
+        }
+      },
+      ProgramValue::PopScope  => "# pop scope\n".to_owned(),
     }
   }
 }
@@ -101,13 +111,12 @@ impl ToSyntax for TemplateValue {
 impl ToSyntax for SidType {
   fn to_syntax(&self) -> String {
     match self {
-      SidType::Bool  => "bool".to_owned(),
-      SidType::Int   => "int".to_owned(),
-      SidType::Float => "float".to_owned(),
-      SidType::Char  => "char".to_owned(),
-      SidType::Str   => "str".to_owned(),
-      SidType::Label => "label".to_owned(),
-      SidType::Any   => "Any".to_owned(),
+      SidType::Bool  => "types.bool".to_owned(),
+      SidType::Int   => "types.int".to_owned(),
+      SidType::Float => "types.float".to_owned(),
+      SidType::Char  => "types.char".to_owned(),
+      SidType::Str   => "types.str".to_owned(),
+      SidType::Label => "types.label".to_owned(),
       SidType::List(elem)             => format!("{} list @!", elem.to_syntax()),
       SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
       SidType::Fn { args, ret } => {
@@ -123,17 +132,9 @@ impl ToSyntax for SidType {
         s
       },
       SidType::Pointer(pointee)       => format!("{} ptr @!", pointee.to_syntax()),
+      SidType::Any                    => "types.any".to_owned(),
+      SidType::Value                  => "types.value".to_owned(),
       SidType::Literal(v)             => v.to_syntax(),
-      SidType::Union(types) => {
-        let inner = types.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(", ");
-        format!("{{{}}}", inner)
-      },
-      SidType::Struct(fields) => {
-        let inner = fields.iter()
-          .map(|(name, t)| format!("{}: {}", name, t.to_syntax()))
-          .collect::<Vec<_>>().join(", ");
-        format!("{{{}}}", inner)
-      },
     }
   }
 }

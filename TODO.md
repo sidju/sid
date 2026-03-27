@@ -1,41 +1,27 @@
 - Decide if we should favor in-crate or external tests
-- Probably add pointer_write, pointer_read and pointer_offset, to enable the
+- Probably add `pointer_write`, `pointer_read` and `pointer_offset`, to enable the
   same basic pointer usage that C allows through base syntax `*(p+2)`.
-- Probably actually get to implementing if/else, match and loops.
+- Implement `if`/`else` (can be expressed as a two-case `match`, but a dedicated
+  built-in may be ergonomic).
 
-## Typed function invocation contract checking
+## `&n` back-reference operator
 
-When invoking a `Substack` or `Script` that carries a `fn_type` annotation
-(`args: Some(…)` / `ret: Some(…)`), verify the contract at the call site:
+A non-destructive stack access analogous to `$n` (which moves a value). `&n`
+would copy a value from the stack without consuming it, enabling struct field
+reading and other patterns where the original must be preserved. The `&`
+character is reserved for this purpose.
 
-- **Args:** before execution, check that the top N items on the data stack
-  match the declared `args` types using `SidType::matches`.
-- **Ret:** after execution, check that the top M items on the data stack
-  match the declared `ret` types.
+## `describe` annotation built-in
 
-Both checks should panic with a clear message naming the function and the
-mismatch. `None` on either dimension means that dimension is unchecked.
+A built-in to attach a human-readable description string to any value.
+Descriptions would be dropped in release/compiled builds but remain visible in
+the interpreter and debugger. Useful for self-documenting functions and types.
 
-## Local scope / label binding for typed functions
+## `typed_rets` struct auto-unpacking (future)
 
-When a typed function is invoked, its `args` names (if declared) should be
-bound into a local scope so the body can refer to them by label rather than
-by stack position. This requires:
-
-- A way to declare argument names alongside their types (e.g. paired with the
-  `typed_args` annotation, or via a separate `named_args` built-in).
-- Creating a local scope at invocation time, populated with the named args
-  popped from the data stack.
-- Tearing down the local scope on return and pushing return values back.
-
-This is the foundation for user-defined named functions.
-
-**Speculative approach:** instead of a list of types for `args`, accept a
-struct type mapping label to type (e.g. `{x: float, y: float}`). The field
-names become the local scope bindings and the field types are the type
-constraints. This would require struct types to have a defined field order so
-that stack positions can be mapped to names unambiguously — currently structs
-are unordered.
+Allow `typed_rets` to accept a struct type in addition to a list of types.
+When a struct type is given, return values would be automatically packaged into
+a named struct on return, mirroring the auto-packing behaviour of `typed_args`.
 
 ## Built-in function wrapper (`src/built_in/`)
 
@@ -61,14 +47,8 @@ Steps:
 3. **`Wrap<F>` struct and `wrap` constructor** (`src/built_in/wrap.rs`)
    Define `struct Wrap<F>(F)` and `pub fn wrap<F>(f: F) -> Wrap<F>`.
    Implement `InterpretBuiltIn for Wrap<F>` where `F: Fn(A) -> R`,
-   `A: FromDataValue`, `R: IntoDataValue`:
-   - `arg_count` returns 1 (or 0 if `A` is `()`).
-   - `return_count` returns 1 (or 0 if `R` is `()`).
-   - `execute` calls `A::from_dv(arg.unwrap())`, then `f(a)`, then `R::into_dv(r)`.
-   For zero-arg functions use a separate impl (or a unit-tuple newtype) so the
-   trait bounds stay coherent.
-   `Wrap<F>` must implement `Debug` (a blanket `impl<F> Debug for Wrap<F>` printing
-   the type name is sufficient).
+   `A: FromDataValue`, `R: IntoDataValue`.
+   `Wrap<F>` must implement `Debug`.
 
 4. **Expose from `built_in/mod.rs`**
    `pub use convert::{FromDataValue, IntoDataValue};`
@@ -76,15 +56,5 @@ Steps:
 
 5. **Proof-of-concept registrations** (`src/built_in/mod.rs` → `get_interpret_builtins`)
    Register a handful of `std`-backed builtins using `wrap` to confirm the machinery
-   works end-to-end, e.g.:
-   - `str_len`:   `wrap(|s: String| s.len() as i64)`
-   - `str_upper`: `wrap(|s: String| s.to_uppercase())`
-   - `int_add`:   `wrap(|(a, b): (i64, i64)| a + b)`
-   - `int_mul`:   `wrap(|(a, b): (i64, i64)| a * b)`
-   Write interpreter integration tests for these in `tests/built_in.rs`.
-
-**Note:** The `wrap` adapter only handles `DataValue` — it cannot represent
-functions that need to inspect or produce `TemplateValue` variants
-(`ParentStackMove`, `ParentLabel`, unrendered `Template`s). Any built-in that
-operates on templates (e.g. a macro-like function that manipulates code as data)
-must be implemented manually as a full `InterpretBuiltIn` to handle those cases.
+   works end-to-end, e.g. `str_len`, `str_upper`, `int_add`, `int_mul`.
+   Write interpreter integration tests in `tests/built_in.rs`.

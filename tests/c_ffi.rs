@@ -134,21 +134,21 @@ fn c_load_header_str_arg_derives_lib_name() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let mut result = builtins["c_load_header"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap())))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap())))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("c_load_header failed");
 
     assert_eq!(result.len(), 1);
     match result.remove(0) {
-        DataValue::Struct(fields) => {
-            let sqrt = fields.iter()
-                .find(|(name, _)| name == "sqrt")
+        DataValue::Map(entries) => {
+            let sqrt = entries.iter()
+                .find(|(k, _)| matches!(k, DataValue::Label(n) if n == "sqrt"))
                 .expect("sqrt not found");
             match &sqrt.1 {
                 DataValue::CFuncSig(s) => assert_eq!(s.lib_name, "test"),
                 other => panic!("expected CFuncSig, got {:?}", other),
             }
         }
-        other => panic!("expected Struct, got {:?}", other),
+        other => panic!("expected Map, got {:?}", other),
     }
 }
 
@@ -163,21 +163,21 @@ fn c_load_header_list_arg_uses_explicit_lib_name() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let mut result = builtins["c_load_header"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("c_load_header failed");
 
     assert_eq!(result.len(), 1);
     match result.remove(0) {
-        DataValue::Struct(fields) => {
-            let sqrt = fields.iter()
-                .find(|(name, _)| name == "sqrt")
+        DataValue::Map(entries) => {
+            let sqrt = entries.iter()
+                .find(|(k, _)| matches!(k, DataValue::Label(n) if n == "sqrt"))
                 .expect("sqrt not found");
             match &sqrt.1 {
                 DataValue::CFuncSig(s) => assert_eq!(s.lib_name, TEST_LIB),
                 other => panic!("expected CFuncSig, got {:?}", other),
             }
         }
-        other => panic!("expected Struct, got {:?}", other),
+        other => panic!("expected Map, got {:?}", other),
     }
 }
 
@@ -187,7 +187,7 @@ fn c_load_header_error_on_wrong_arg() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["c_load_header"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(42)))], &mut state, &mut vec![]);
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(42)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -199,7 +199,7 @@ fn c_link_lib_preloads_library() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     builtins["c_link_lib"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap())))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap())))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("c_link_lib failed");
     assert!(state.libraries.contains_key(TEST_LIB), "library should be in central store");
 }
@@ -214,7 +214,7 @@ fn c_link_lib_list_arg_registers_under_name() {
         DataValue::Str(std::ffi::CString::new("math").unwrap()),
     ]);
     builtins["c_link_lib"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("c_link_lib with list failed");
     assert!(state.libraries.contains_key("math"), "library should be registered under 'math'");
     assert!(!state.libraries.contains_key(TEST_LIB), "should not be registered under path");
@@ -226,7 +226,7 @@ fn c_link_lib_error_on_missing_library() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["c_link_lib"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new("/nonexistent/lib.so").unwrap())))], &mut state, &mut vec![]);
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Str(std::ffi::CString::new("/nonexistent/lib.so").unwrap())))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -236,7 +236,7 @@ fn c_link_lib_error_on_wrong_arg() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["c_link_lib"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(42)))], &mut state, &mut vec![]);
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(42)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -248,7 +248,7 @@ fn drop_discards_value() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["drop"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(99)))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(99)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("drop failed");
     assert!(result.is_empty(), "drop should return nothing");
 }
@@ -264,7 +264,7 @@ fn eq_equal_values_returns_true() {
         .execute(&mut vec![
             sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
             sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
-        ], &mut state, &mut vec![])
+        ], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("eq failed");
     assert_eq!(result, vec![DataValue::Bool(true)]);
 }
@@ -278,7 +278,7 @@ fn eq_unequal_values_returns_false() {
         .execute(&mut vec![
             sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1))),
             sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(2))),
-        ], &mut state, &mut vec![])
+        ], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("eq failed");
     assert_eq!(result, vec![DataValue::Bool(false)]);
 }
@@ -291,7 +291,7 @@ fn eq_error_on_wrong_arg() {
     // Stack with only one value — should error
     let result = builtins["eq"].execute(&mut vec![
         sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1))),
-    ], &mut state, &mut vec![]);
+    ], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -303,7 +303,7 @@ fn assert_passes_on_true() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["assert"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Bool(true)))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Bool(true)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("assert should not fail on true");
     assert!(result.is_empty());
 }
@@ -313,7 +313,7 @@ fn assert_errors_on_false() {
     let builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
-    let result = builtins["assert"].execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Bool(false)))], &mut state, &mut vec![]);
+    let result = builtins["assert"].execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Bool(false)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -322,7 +322,7 @@ fn assert_error_on_non_bool() {
     let builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
-    let result = builtins["assert"].execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1)))], &mut state, &mut vec![]);
+    let result = builtins["assert"].execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -348,12 +348,12 @@ fn load_scope_inserts_struct_fields_into_global_scope() {
     let builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
-    let arg = DataValue::Struct(vec![
-        ("sqrt".to_owned(), DataValue::CFuncSig(get_sqrt_sig())),
-        ("answer".to_owned(), DataValue::Int(42)),
+    let arg = DataValue::Map(vec![
+        (DataValue::Label("sqrt".to_owned()), DataValue::CFuncSig(get_sqrt_sig())),
+        (DataValue::Label("answer".to_owned()), DataValue::Int(42)),
     ]);
     let result = builtins["load_scope"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("load_scope failed");
     assert!(result.is_empty(), "load_scope should return nothing");
     assert!(state.scope.contains_key("sqrt"), "sqrt should be in scope");
@@ -366,7 +366,7 @@ fn load_scope_error_on_non_struct() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["load_scope"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1)))], &mut state, &mut vec![]);
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 
@@ -378,7 +378,7 @@ fn clone_duplicates_value() {
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
     let result = builtins["clone"]
-        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(7)))], &mut state, &mut vec![])
+        .execute(&mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(7)))], &mut state, &mut vec![], &mut HashMap::new(), &builtins)
         .expect("clone failed");
     assert_eq!(result, vec![DataValue::Int(7), DataValue::Int(7)]);
 }
@@ -388,7 +388,7 @@ fn clone_error_on_no_value() {
     let builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
     let mut state = GlobalState::new(&mut scope);
-    let result = builtins["clone"].execute(&mut vec![], &mut state, &mut vec![]);
+    let result = builtins["clone"].execute(&mut vec![], &mut state, &mut vec![], &mut HashMap::new(), &builtins);
     assert!(result.is_err());
 }
 

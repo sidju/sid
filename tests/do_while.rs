@@ -19,6 +19,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
     &mut vec![],
     &HashMap::new(),
     &global_scope,
+    &comptime_builtins,
   );
   let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
   let builtins = get_interpret_builtins();
@@ -28,6 +29,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
     program_stack: vec![ProgramValue::Invoke],
     data_stack: instructions,
     local_scope: HashMap::new(),
+    scope_stack: Vec::new(),
     global_state,
   };
   while !exe_state.program_stack.is_empty() {

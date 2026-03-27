@@ -32,22 +32,25 @@ fn pop_arg(
 
 // ── default scope ─────────────────────────────────────────────────────────────
 
-/// Returns the default global scope, pre-populated with C-aligned type values.
+/// Returns the default global scope, pre-populated with a `types` struct
+/// containing the primitive type values (`types.bool`, `types.int`, etc.).
 ///
-/// Each entry maps a C-style type name to a `DataValue::Type(SidType)`, making
-/// bare labels like `int`, `char`, etc. resolve to first-class type values.
+/// Built-in function names are **not** stored here; they are resolved as the
+/// lowest-priority fallback inside `get_from_scope` by passing the relevant
+/// `builtin_names` slice at each call site.
 pub fn default_scope() -> HashMap<String, DataValue> {
+  let types = DataValue::Map(vec![
+    (DataValue::Label("bool".to_owned()),  DataValue::Type(SidType::Bool)),
+    (DataValue::Label("int".to_owned()),   DataValue::Type(SidType::Int)),
+    (DataValue::Label("float".to_owned()), DataValue::Type(SidType::Float)),
+    (DataValue::Label("char".to_owned()),  DataValue::Type(SidType::Char)),
+    (DataValue::Label("str".to_owned()),   DataValue::Type(SidType::Str)),
+    (DataValue::Label("label".to_owned()), DataValue::Type(SidType::Label)),
+    (DataValue::Label("any".to_owned()),   DataValue::Type(SidType::Any)),
+    (DataValue::Label("value".to_owned()), DataValue::Type(SidType::Value)),
+  ]);
   let mut m = HashMap::new();
-  for (name, ty) in [
-    ("bool",  SidType::Bool),
-    ("int",   SidType::Int),
-    ("char",  SidType::Char),
-    ("float", SidType::Float),
-    ("str",   SidType::Str),
-    ("Any",   SidType::Any),
-  ] {
-    m.insert(name.to_owned(), DataValue::Type(ty));
-  }
+  m.insert("types".to_owned(), types);
   m
 }
 
@@ -76,18 +79,20 @@ impl InterpretBuiltIn for CLoadHeader {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let arg = pop_arg(data_stack, "c_load_header")?;
     let (header_path, lib_name) = parse_load_header_arg(arg)?;
     let sigs = parse_c_header(&header_path, &lib_name)?;
-    let out_fields: Vec<(String, DataValue)> = sigs
+    let out_fields: Vec<(DataValue, DataValue)> = sigs
       .into_iter()
       .map(|s| {
         let name = s.name.clone();
-        (name, DataValue::CFuncSig(s))
+        (DataValue::Label(name), DataValue::CFuncSig(s))
       })
       .collect();
-    Ok(vec![DataValue::Struct(out_fields)])
+    Ok(vec![DataValue::Map(out_fields)])
   }
 }
 
@@ -142,6 +147,8 @@ impl InterpretBuiltIn for CLinkLib {
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let arg = pop_arg(data_stack, "c_link_lib")?;
     let (lib_path, lib_name) = parse_link_lib_arg(arg)?;
@@ -189,13 +196,18 @@ impl InterpretBuiltIn for LoadScope {
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
-    let fields = match pop_arg(data_stack, "load_scope")? {
-      DataValue::Struct(f) => f,
-      other => anyhow::bail!("load_scope expects Struct, got {:?}", other),
+    let entries = match pop_arg(data_stack, "load_scope")? {
+      DataValue::Map(e) => e,
+      other => anyhow::bail!("load_scope expects a label-keyed Map, got {:?}", other),
     };
-    for (name, value) in fields {
-      global_state.scope.insert(name, value);
+    for (key, value) in entries {
+      match key {
+        DataValue::Label(name) => { global_state.scope.insert(name, value); },
+        other => anyhow::bail!("load_scope: key must be a Label, got {:?}", other),
+      }
     }
     Ok(vec![])
   }
@@ -215,6 +227,8 @@ impl InterpretBuiltIn for Clone {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let v = pop_arg(data_stack, "clone")?;
     Ok(vec![v.clone(), v])
@@ -233,6 +247,8 @@ impl InterpretBuiltIn for Drop {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     pop_arg(data_stack, "drop")?;
     Ok(vec![])
@@ -254,6 +270,8 @@ impl InterpretBuiltIn for Eq {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let b = pop_arg(data_stack, "eq")?;
     let a = pop_arg(data_stack, "eq")?;
@@ -276,6 +294,8 @@ impl InterpretBuiltIn for Assert {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "assert")? {
       DataValue::Bool(true)  => Ok(vec![]),
@@ -300,6 +320,8 @@ impl InterpretBuiltIn for Not {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "not")? {
       DataValue::Bool(b) => Ok(vec![DataValue::Bool(!b)]),
@@ -325,6 +347,8 @@ impl InterpretBuiltIn for Null {
     _data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     Ok(vec![DataValue::Pointer { addr: 0, pointee_ty: SidType::Any }])
   }
@@ -347,6 +371,8 @@ impl InterpretBuiltIn for PtrCast {
     data_stack: &mut Vec<crate::TemplateValue>,
     global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let new_type = pop_arg(data_stack, "ptr_cast")?;
     let pointer  = pop_arg(data_stack, "ptr_cast")?;
@@ -385,6 +411,8 @@ impl InterpretBuiltIn for PtrReadCstr {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     match pop_arg(data_stack, "ptr_read_cstr")? {
       DataValue::Pointer { addr, .. } => {
@@ -416,6 +444,8 @@ impl InterpretBuiltIn for DebugStack {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let n = match pop_arg(data_stack, "debug_stack")? {
       DataValue::Int(n) if n >= 0 => n as usize,
@@ -456,6 +486,8 @@ impl InterpretBuiltIn for WhileDo {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let body_val = pop_arg(data_stack, "while_do")?;
     let cond_val = pop_arg(data_stack, "while_do")?;
@@ -500,6 +532,8 @@ impl InterpretBuiltIn for DoWhile {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let cond_val = pop_arg(data_stack, "do_while")?;
     let body_val = pop_arg(data_stack, "do_while")?;
@@ -551,6 +585,8 @@ impl InterpretBuiltIn for FnType {
     _data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     Ok(vec![DataValue::Type(SidType::Fn { args: None, ret: None })])
   }
@@ -558,8 +594,14 @@ impl InterpretBuiltIn for FnType {
 
 /// Sets the `args` type annotation on a `Substack`/`Script` or `SidType::Fn`.
 ///
-/// Usage: `callable [T1 T2 …] typed_args !`
-/// Pops the list of types (top), then the callable; returns it with args set.
+/// Usage: `callable {name: T, …} typed_args !`
+///
+/// The map keys must all be labels and values must all be types.  The map is
+/// given deepest-first (first field = deepest/last-pushed arg); it is stored
+/// reversed (top-first) to match the `args[0]`=top convention.
+///
+/// At call time the arg types are verified and each arg value is consumed from
+/// the data stack and bound into the callee's fresh local scope under its name.
 #[derive(Debug)]
 struct TypedArgs;
 
@@ -569,17 +611,43 @@ impl InterpretBuiltIn for TypedArgs {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let types_val  = pop_arg(data_stack, "typed_args")?;
     let target_val = pop_arg(data_stack, "typed_args")?;
-    let types = list_to_type_vec(types_val, "typed_args")?;
+
+    // Validate shape: must be a Map with all label keys.
+    let label_map_ty = SidType::Map {
+      key: Box::new(SidType::Label),
+      value: Box::new(SidType::Any),
+    };
+    if !label_map_ty.matches(&types_val) {
+      anyhow::bail!("typed_args: expected a label-keyed Map, got {:?}", types_val);
+    }
+    let entries = match types_val { DataValue::Map(e) => e, _ => unreachable!() };
+
+    // Extract (name, type) pairs; written deepest-first → stored top-first.
+    let named_args: Vec<(String, SidType)> = entries.into_iter().rev().map(|(k, v)| {
+      let name = match k { DataValue::Label(s) => s, _ => unreachable!() };
+      let ty = match v {
+        DataValue::Type(t) => t,
+        other => anyhow::bail!(
+          "typed_args: field '{}' value must be a type, got {:?}", name, other
+        ),
+      };
+      Ok((name, ty))
+    }).collect::<anyhow::Result<_>>()?;
+
+    // For the abstract Fn type, store type-only (no names at type level).
+    let type_only: Vec<SidType> = named_args.iter().map(|(_, t)| t.clone()).collect();
     match target_val {
       DataValue::Substack { body, ret, .. } =>
-        Ok(vec![DataValue::Substack { body, args: Some(types), ret }]),
+        Ok(vec![DataValue::Substack { body, args: Some(named_args), ret }]),
       DataValue::Script { body, ret, .. } =>
-        Ok(vec![DataValue::Script { body, args: Some(types), ret }]),
+        Ok(vec![DataValue::Script { body, args: Some(named_args), ret }]),
       DataValue::Type(SidType::Fn { ret, .. }) =>
-        Ok(vec![DataValue::Type(SidType::Fn { args: Some(types), ret })]),
+        Ok(vec![DataValue::Type(SidType::Fn { args: Some(type_only), ret })]),
       other => anyhow::bail!("typed_args: expected Substack, Script, or Fn type, got {:?}", other),
     }
   }
@@ -588,6 +656,7 @@ impl InterpretBuiltIn for TypedArgs {
 /// Sets the `ret` type annotation on a `Substack`/`Script` or `SidType::Fn`.
 ///
 /// Usage: `callable [T1 T2 …] typed_rets !`
+/// The list is given deepest-first; it is stored reversed (top-first).
 #[derive(Debug)]
 struct TypedRets;
 
@@ -597,10 +666,13 @@ impl InterpretBuiltIn for TypedRets {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let types_val  = pop_arg(data_stack, "typed_rets")?;
     let target_val = pop_arg(data_stack, "typed_rets")?;
-    let types = list_to_type_vec(types_val, "typed_rets")?;
+    // Reverse: user writes deepest-first, stored top-first.
+    let types: Vec<SidType> = list_to_type_vec(types_val, "typed_rets")?.into_iter().rev().collect();
     match target_val {
       DataValue::Substack { body, args, .. } =>
         Ok(vec![DataValue::Substack { body, args, ret: Some(types) }]),
@@ -626,6 +698,8 @@ impl InterpretBuiltIn for UntypedArgs {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let target_val = pop_arg(data_stack, "untyped_args")?;
     match target_val {
@@ -653,6 +727,8 @@ impl InterpretBuiltIn for UntypedRets {
     data_stack: &mut Vec<crate::TemplateValue>,
     _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let target_val = pop_arg(data_stack, "untyped_rets")?;
     match target_val {
@@ -667,8 +743,144 @@ impl InterpretBuiltIn for UntypedRets {
   }
 }
 
+// ── local ─────────────────────────────────────────────────────────────────────
+
+/// Built-in that binds a value to a name in the **local** scope.
+///
+/// Pops two values: first `value` (any), then `name` (a label).
+/// Identical to `def` except it writes to local scope instead of global scope.
+///
+/// Available at **both** comptime and runtime.
+#[derive(Debug)]
+struct Local;
+
+impl InterpretBuiltIn for Local {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let value = pop_arg(data_stack, "local")?;
+    let name = match pop_arg(data_stack, "local")? {
+      DataValue::Label(l) => l,
+      other => anyhow::bail!("local: name must be a label, got {:?}", other),
+    };
+    local_scope.insert(name, value);
+    Ok(vec![])
+  }
+}
+
+// ── load_local ────────────────────────────────────────────────────────────────
+
+/// Built-in that unpacks a label-keyed `DataValue::Map` into the **local** scope.
+///
+/// Argument: `DataValue::Map` where every key is a `DataValue::Label`.
+/// Return:   nothing.
+///
+/// Identical to `load_scope` except it writes to local scope.
+/// Available at **both** comptime and runtime.
+#[derive(Debug)]
+struct LoadLocal;
+
+impl InterpretBuiltIn for LoadLocal {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let entries = match pop_arg(data_stack, "load_local")? {
+      DataValue::Map(e) => e,
+      other => anyhow::bail!("load_local expects a label-keyed Map, got {:?}", other),
+    };
+    for (key, value) in entries {
+      match key {
+        DataValue::Label(name) => { local_scope.insert(name, value); },
+        other => anyhow::bail!("load_local: key must be a Label, got {:?}", other),
+      }
+    }
+    Ok(vec![])
+  }
+}
+
+// ── match ─────────────────────────────────────────────────────────────────────
+
+/// Built-in that dispatches a value against an ordered map of pattern/action
+/// cases, invoking the first matching action.
+///
+/// Usage: `value {pattern: action, ...} match !`
+///
+/// - `cases` must be a `DataValue::Map`, or a label that resolves to one.
+///   The map is iterated in declaration order (first-match-wins).
+/// - Map keys are used directly as patterns via `DataValue::pattern_matches`.
+///   `Type` values delegate to their `matches` method; all other values require
+///   exact equality.  Use `$types.int`, `$types.any`, etc. for type dispatch;
+///   use bare label keys (which render as `DataValue::Label`) for enum dispatch.
+/// - `action` must be a `DataValue::Substack` or `Script`; its body is pushed
+///   onto the program stack for execution.
+/// - The matched value is consumed.
+/// - All branches must leave the stack with the same net size change — a
+///   programmer contract, not enforced at runtime since only one branch runs.
+/// - Panics if no case matches.
+///
+/// Runtime-only (manipulates the program stack).
+#[derive(Debug)]
+struct Match;
+
+impl InterpretBuiltIn for Match {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let cases_raw = pop_arg(data_stack, "match")?;
+    // Resolve a label to its value in local or global scope.
+    let cases_val = match cases_raw {
+      DataValue::Label(ref l) => {
+        if let Some(v) = local_scope.get(l.as_str()) {
+          v.clone()
+        } else if let Some(v) = global_state.scope.get(l.as_str()) {
+          v.clone()
+        } else {
+          anyhow::bail!("match: undefined label '{}'", l)
+        }
+      },
+      other => other,
+    };
+    let value = pop_arg(data_stack, "match")?;
+
+    let entries = match cases_val {
+      DataValue::Map(e) => e,
+      other => anyhow::bail!("match: cases must be a Map, got {:?}", other),
+    };
+
+    for (pattern, action) in entries {
+      if pattern.pattern_matches(&value) {
+        let body = match action {
+          DataValue::Substack { body, .. } | DataValue::Script { body, .. } => body,
+          other => anyhow::bail!("match: action must be a Substack or Script, got {:?}", other),
+        };
+        program_stack.extend(body.into_iter().rev());
+        return Ok(vec![]);
+      }
+    }
+
+    anyhow::bail!("match: no case matched value {:?}", value)
+  }
+}
+
 // Module-level statics so both get_interpret_builtins and get_comptime_builtins
 // can reference them without duplicating declarations.
+static LOCAL:         Local       = Local;
+static LOAD_LOCAL:    LoadLocal   = LoadLocal;
 static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
 static C_LINK_LIB:    CLinkLib    = CLinkLib;
 static LOAD_SCOPE:    LoadScope   = LoadScope;
@@ -688,6 +900,7 @@ static TYPED_ARGS:       TypedArgs      = TypedArgs;
 static TYPED_RETS:       TypedRets      = TypedRets;
 static UNTYPED_ARGS:     UntypedArgs    = UntypedArgs;
 static UNTYPED_RETS:     UntypedRets    = UntypedRets;
+static MATCH:            Match          = Match;
 
 /// Register the built-ins that are available at both runtime and comptime.
 ///
@@ -696,6 +909,8 @@ static UNTYPED_RETS:     UntypedRets    = UntypedRets;
 fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>) {
   m.insert("c_load_header", &C_LOAD_HEADER);
   m.insert("load_scope",    &LOAD_SCOPE);
+  m.insert("local",         &LOCAL);
+  m.insert("load_local",    &LOAD_LOCAL);
   m.insert("clone",         &CLONE);
   m.insert("drop",          &DROP);
   m.insert("eq",            &EQ);
@@ -718,6 +933,7 @@ pub fn get_interpret_builtins() -> HashMap<&'static str, &'static dyn InterpretB
   m.insert("ptr_read_cstr", &PTR_READ_CSTR);
   m.insert("while_do",      &WHILE_DO);
   m.insert("do_while",      &DO_WHILE);
+  m.insert("match",         &MATCH);
   m
 }
 

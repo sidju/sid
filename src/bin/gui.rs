@@ -59,12 +59,14 @@ fn compile(source: & str) -> Program {
   // Create the global scope, with built-in functions and constants
   // (Implementations of this don't yet exist)
   let global_scope = HashMap::new();
+  let builtins = get_interpret_builtins();
   // Render that Vec<TemplateValue> as a Substack
   let rendered = render_template(
     Template::substack(parsed),
     &mut Vec::new(), // Current stack, not applicable
     &mut HashMap::new(), // Current local scope, not applicable
     &global_scope,
+    &builtins,
   );
   return Program{
     instructions: rendered,

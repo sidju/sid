@@ -34,13 +34,12 @@ fn compile(source: &str) -> Program {
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
-  // Wrap the post-comptime sequence as a substack and render it to get the
-  // initial data stack (TemplateValue entries ready for the interpreter).
   let rendered = render_template(
     Template::substack((after_comptime, 0)),
     &mut Vec::new(),
     &HashMap::new(),
     &global_scope,
+    &comptime_builtins,
   );
   // render_template returns Vec<DataValue>; lift them into TemplateValue.
   let instructions = rendered.into_iter().map(TemplateValue::from).collect();

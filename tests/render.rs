@@ -10,11 +10,13 @@ pub fn render_test_fixture(
   expected_parent_stack: Vec<TemplateValue>,
   expected_rendered_stack: Vec<DataValue>,
 ) {
+  let builtins = get_interpret_builtins();
   let rendered_stack = render_template(
     template,
     &mut parent_stack,
     &parent_scope,
     &global_scope,
+    &builtins,
   );
   // Verify remaining parent stack
   assert_eq!(

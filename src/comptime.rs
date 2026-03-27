@@ -33,7 +33,7 @@ pub fn comptime_pass(
       // ── Template: either render eagerly (comptime) or recurse into body ──
       TemplateValue::Literal(ProgramValue::Template(t)) => {
         if t.comptime {
-          render_comptime_template(t, &mut stack, scope)?;
+          render_comptime_template(t, &mut stack, scope, builtins)?;
         } else {
           let new_data = comptime_pass_template_data(t.data, builtins, scope)?;
           stack.push(TemplateValue::Literal(ProgramValue::Template(
@@ -55,7 +55,7 @@ pub fn comptime_pass(
           .ok_or_else(|| anyhow::anyhow!("Unknown comptime function: '{}'", fn_name))?;
 
         let mut gs = GlobalState::new(scope);
-        for result in builtin.execute(&mut stack, &mut gs, &mut vec![])? {
+        for result in builtin.execute(&mut stack, &mut gs, &mut vec![], &mut HashMap::new(), builtins)? {
           stack.push(TemplateValue::from(result));
         }
       }
@@ -104,6 +104,7 @@ fn render_comptime_template(
   template: Template,
   stack: &mut Vec<TemplateValue>,
   scope: &mut HashMap<String, DataValue>,
+  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
 ) -> Result<()> {
   let n = template.consumes_stack_entries;
   if n > stack.len() {
@@ -133,7 +134,7 @@ fn render_comptime_template(
 
   // render_template uses scope as both parent and global scope here.
   let empty_scope = HashMap::new();
-  let rendered = render_template(template, &mut parent, &empty_scope, scope);
+  let rendered = render_template(template, &mut parent, &empty_scope, scope, builtins);
 
   for v in rendered {
     stack.push(TemplateValue::from(v));
