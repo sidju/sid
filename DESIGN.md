@@ -18,7 +18,6 @@ consume values from the top of the stack and push their results back.
 | list | `[1, "two", '3']` | Enclosed by `[]`; element types need not match |
 | set | `{1, "two", 3}` | Enclosed by `{}`; no `:` at the first parsing level |
 | map | `{one: "one", two: 2.0}` | Enclosed by `{}`; `:` at the first parsing level; keys are label values |
-| struct | `{one: "one"} struct @!` | A map whose keys are validated as labels |
 | substack | `(16 16 mul sqrt)` | Enclosed by `()`; a value that can be invoked with `!` |
 | script | `<"Hi" print "there" print>` | Enclosed by `<>`; like substack but sequential execution guaranteed |
 
@@ -135,21 +134,21 @@ template is rendered when its enclosing substack is invoked.
 
 ## Functions
 
-Functions in SID take zero or one argument and return zero or one value.
-Multiple inputs or outputs are handled by grouping them in a struct or list.
+Calling functions in SID is similar to calling them in Lisp, except opposite.
+In Lisp everything is wrapped in a list with the function first; in SID arguments
+are pushed onto the stack and the function comes last.  Each call pops a fixed
+number of arguments from the top of the stack and pushes its return values back.
 
-The convention for multiple named inputs is a **struct**:
-
-```
-{ x: 3.0, y: 4.0 } distance !
-```
-
-The convention for multiple positional inputs or outputs is a **typed list**
-(a list whose type annotation describes each position):
+A function is a substack — a sequence of operations enclosed in `()`.  Define
+one and call it with `!`:
 
 ```
-[3.0 4.0] distance !   # arg type: [float float]
+# A substack that squares the top of the stack:
+9 (dup multiply !) !   # leaves 81
 ```
+
+Substacks are first-class values: they can be stored, passed as arguments, and
+invoked at any point.
 
 ### Built-in function wrapper
 
@@ -167,7 +166,7 @@ This works through two conversion traits:
 - **`FromDataValue`** — extracts a Rust type from a `DataValue`.
   - Primitives (`i64`, `f64`, `String`, …) match their `DataValue` counterpart.
   - Rust tuples `(A, B, …)` destructure a `DataValue::List` positionally.
-  - Rust structs implement it by destructuring a `DataValue::Struct` by field name.
+  - Rust structs implement it by destructuring a label-keyed `DataValue::Map` by field name.
 - **`IntoDataValue`** — converts a Rust type back into an `Option<DataValue>`.
   - `()` maps to `None` (zero-return function).
   - Everything else wraps to `Some(DataValue::…)`.
@@ -218,12 +217,11 @@ and a plain value when all of its elements are plain values.
 | `{1, 2, 3}` | values | set value |
 | `{"yes", "no"}` | values | set value (usable as an enum type) |
 | `{str, int}` | types | union type |
-| `{x: 1, y: 2}` | values | map value (label keys are values) |
-| `{x: 1, y: 2} struct @!` | — | struct value (validates label keys) |
-| `{x: float, y: float}` | types | map type |
+| `{x: 1, y: 2}` | values | ordered map value; a **struct** when all keys are labels |
+| `{x: float, y: float}` | types | struct type (ordered structural match: same fields, same order, no extras) |
 | `[1, 2, 3]` | values | list value |
 | `int list @!` | type arg | list type |
-| `str int map @!` | type args | map type (key `str`, value `int`) |
+| `str int map @!` | type args | homogeneous map type (key `str`, value `int`) |
 
 Parametric type constructors (`list`, `set`, `map`) follow RPN order: push the
 type argument(s) first, then call the constructor with `@!`.

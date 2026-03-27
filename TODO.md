@@ -4,6 +4,27 @@
 - Implement `if`/`else` (can be expressed as a two-case `match`, but a dedicated
   built-in may be ergonomic).
 
+## Documentation and examples (next up)
+
+- Document `matches` semantics for every type in DESIGN.md
+- Add Structs/Maps section to DESIGN.md (unified Map type, label-key distinction,
+  dot-label access, struct matching)
+- Add Match section to DESIGN.md (`{pattern: action} match !`, type dispatch,
+  enum dispatch, first-match-wins)
+- Rewrite `fn` example in DESIGN.md (substack + `typed_args` + `typed_rets`)
+- Verify `def` example in DESIGN.md is still valid
+- Update `examples/fizz-buzz.sid`
+- Update `examples/structs.sid` (`&` → `$`, use real `local!`, fix unimplemented syntax)
+- Update `examples/reordering.sid` (`&n` → `$n`)
+- Update `examples/nurbs.sid` (match syntax and other outdated constructs)
+
+## AND/NOT match pattern combinators (deferred)
+
+Extend the pattern matching system with AND (matches if all sub-patterns match)
+and NOT (matches if inner pattern does not match) combinators. Syntax TBD —
+design should follow the built-in constructor idiom used elsewhere.
+
+
 ## `&n` back-reference operator
 
 A non-destructive stack access analogous to `$n` (which moves a value). `&n`
