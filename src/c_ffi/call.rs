@@ -235,25 +235,17 @@ fn call_fn_ptr(
         }
         CType::CString => {
             let ptr: *const c_char = unsafe { cif.call(code_ptr, &ffi_args) };
-            if ptr.is_null() {
-                None
-            } else {
-                Some(DataValue::Pointer {
-                    addr: ptr as usize,
-                    pointee_ty: SidType::Str,
-                })
-            }
+            Some(DataValue::Pointer {
+                addr: ptr as usize,
+                pointee_ty: SidType::Str,
+            })
         }
         CType::Pointer(pointee_ty) => {
             let ptr: *mut std::ffi::c_void = unsafe { cif.call(code_ptr, &ffi_args) };
-            if ptr.is_null() {
-                None
-            } else {
-                Some(DataValue::Pointer {
-                    addr: ptr as usize,
-                    pointee_ty: pointee_ty.clone(),
-                })
-            }
+            Some(DataValue::Pointer {
+                addr: ptr as usize,
+                pointee_ty: pointee_ty.clone(),
+            })
         }
     };
 
