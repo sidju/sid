@@ -34,38 +34,29 @@ malloc! types.str ptr_cast! clone!
 
 # Prepare the fgets arguments so they are easy to clone
 [$1 $2 $3]
-# Add a null pointer to keep stack shape consistent (hmmm....)
-types.null
 
 # With everything prepared we start a loop substack
 (
-  # Drop the pointless pointer we need to keep the condition
-  # stack modification constraint. Perhaps we should allow free
-  # data transfer from body to condition?
-  drop!
-
-  # To be able to preserve the stack as thouth the body never ran
+  # To be able to preserve the stack as though the body never ran
   # we must duplicate the values we consume
   clone!
 
   # fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
   fgets!
 )
-# Then the condition
+# Then the condition: fgets result is passed directly from the body
 (
-  # A very classical match, clone before so we can use the value
-  # in the match arms
+  # Clone so the any-arm can use the result; match consumes the clone.
   clone! {
-    $types.null: (false),
+    $types.null: (drop! false),
     # When not null, print and continue looping if non-zero
-    $types.any: (clone! ["%s" $1] printf! 0 eq! not!),
+    $types.any: (["%s" $1] printf! 0 eq! not!),
   } match!
 )
 do_while !
 
-# By definition do_while exits with both fgets args and retval on
-# the stack, so drop those.
-drop! drop!
+# the loop exits with fgets args on the stack, so drop that.
+drop!
 
 # We should free our string buffer
 free !
