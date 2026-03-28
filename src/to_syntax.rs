@@ -38,6 +38,8 @@ impl ToSyntax for DataValue {
       DataValue::Type(v) => v.to_syntax(),
       DataValue::Label(v) => v.clone(),
       DataValue::CFunction(f) => format!("<CFunction {}>", f.name),
+      DataValue::Pointer { addr: 0, pointee_ty: SidType::Any } =>
+        "types.null".to_owned(),
       DataValue::Pointer { addr, pointee_ty } =>
         format!("<Pointer 0x{:x} : {}>", addr, pointee_ty.to_syntax()),
       DataValue::CFuncSig(sig) => format!("<CFuncSig {}>", sig.name),

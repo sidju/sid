@@ -28,19 +28,46 @@ clone!
 # Then alloc, and clone since fgets eats one copy
 malloc! types.str ptr_cast! clone!
 
-# fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
-# We just need to move the extra pointer copy out of the way
-# Use templating to reorder the stack for fgets
-($4 $3 $2 $1)!
-[$1 $2 $3] fgets !
+# Get the stack in order before we start looping, since the loop
+# must keep the stack consistent between each loop.
+($4 $3 $2 $1) # A reversal of top 4 stack entries
 
-# And again for fclose, to keep the fgets retval out of our way
-($3 $2 $1)!
+# Prepare the fgets arguments so they are easy to clone
+[$1 $2 $3]
+# Add a null pointer to keep stack shape consistent (hmmm....)
+types.null
+
+# With everything prepared we start a loop substack
+(
+  # Drop the pointless pointer we need to keep the condition
+  # stack modification constraint. Perhaps we should allow free
+  # data transfer from body to condition?
+  drop!
+
+  # To be able to preserve the stack as thouth the body never ran
+  # we must duplicate the values we consume
+  clone!
+
+  # fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
+  fgets!
+)
+# Then the condition
+(
+  # A very classical match, clone before so we can use the value
+  # in the match arms
+  clone! {
+    $types.null: (false),
+    # When not null, print and continue looping if non-zero
+    types.any: (clone! puts! 0 eq! not!),
+  } match!
+)
+do_while !
+
+# By definition do_while exits with both fgets args and retval on
+# the stack, so drop those.
+drop! drop!
+
+# I think fclose values are in place now
 fclose !
 
 0 eq! assert! # Check retval from fclose
-null@! eq! not! assert! # Check retval from fgets
-
-# Print the line; puts appends a newline.
-puts !
-0 eq! not! assert!

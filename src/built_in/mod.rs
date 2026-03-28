@@ -34,7 +34,8 @@ fn pop_arg(
 // ── default scope ─────────────────────────────────────────────────────────────
 
 /// Returns the default global scope, pre-populated with a `types` struct
-/// containing the primitive type values (`types.bool`, `types.int`, etc.).
+/// containing the primitive type values (`types.bool`, `types.int`, etc.) and
+/// the null pointer constant (`types.null`).
 ///
 /// Built-in function names are **not** stored here; they are resolved as the
 /// lowest-priority fallback inside `get_from_scope` by passing the relevant
@@ -49,6 +50,7 @@ pub fn default_scope() -> HashMap<String, DataValue> {
     (DataValue::Label("label".to_owned()), DataValue::Type(SidType::Label)),
     (DataValue::Label("any".to_owned()),   DataValue::Type(SidType::Any)),
     (DataValue::Label("value".to_owned()), DataValue::Type(SidType::Value)),
+    (DataValue::Label("null".to_owned()),  DataValue::Pointer { addr: 0, pointee_ty: SidType::Any }),
   ]);
   let mut m = HashMap::new();
   m.insert("types".to_owned(), types);
@@ -328,30 +330,6 @@ impl InterpretBuiltIn for Not {
       DataValue::Bool(b) => Ok(vec![DataValue::Bool(!b)]),
       other => anyhow::bail!("not expects Bool, got {:?}", other),
     }
-  }
-}
-
-// ── null ──────────────────────────────────────────────────────────────────────
-
-/// Built-in that pushes a null pointer (`Pointer { addr: 0, pointee_ty: Any }`).
-///
-/// Useful for comparing C function return values against NULL, e.g.:
-/// ```text
-/// fgets_result  null  eq!  not!  assert!
-/// ```
-#[derive(Debug)]
-struct Null;
-
-impl InterpretBuiltIn for Null {
-  fn execute(
-    &self,
-    _data_stack: &mut Vec<crate::TemplateValue>,
-    _global_state: &mut GlobalState<'_>,
-    _program_stack: &mut Vec<crate::ProgramValue>,
-    _local_scope: &mut HashMap<String, DataValue>,
-    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-  ) -> anyhow::Result<Vec<DataValue>> {
-    Ok(vec![DataValue::Pointer { addr: 0, pointee_ty: SidType::Any }])
   }
 }
 
@@ -882,7 +860,6 @@ static DROP:          Drop        = Drop;
 static EQ:            Eq          = Eq;
 static ASSERT:        Assert      = Assert;
 static NOT:           Not         = Not;
-static NULL:          Null        = Null;
 static PTR_CAST:      PtrCast     = PtrCast;
 static PTR_READ_CSTR: PtrReadCstr = PtrReadCstr;
 static DEBUG_STACK:   DebugStack  = DebugStack;
@@ -909,7 +886,6 @@ fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>)
   m.insert("eq",            &EQ);
   m.insert("assert",        &ASSERT);
   m.insert("not",           &NOT);
-  m.insert("null",          &NULL);
   m.insert("ptr_cast",        &PTR_CAST);
   m.insert("debug_stack",     &DEBUG_STACK);
   m.insert("fn",              &FN_TYPE);
