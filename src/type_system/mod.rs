@@ -157,6 +157,15 @@ impl SidType {
             }
           }
         },
+        // Pointer literal → exact address match; pointee type is checked via
+        // SidType::matches so that e.g. types.null (pointee_ty: Any) matches
+        // any null pointer regardless of its declared pointee type.
+        DataValue::Pointer { addr: pat_addr, pointee_ty: pat_pointee } => match value {
+          DataValue::Pointer { addr: val_addr, pointee_ty: val_pointee } =>
+            val_addr == pat_addr
+            && pat_pointee.matches(&DataValue::Type(val_pointee.clone())),
+          _ => false,
+        },
         // All other literals → exact equality.
         other => value == other,
       },
