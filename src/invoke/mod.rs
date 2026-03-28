@@ -255,13 +255,29 @@ pub fn interpret_one<'a, 'b>(
       if bool_val {
         let mut body_rev: Vec<ProgramValue> = body.iter().rev().cloned().collect();
         let mut cond_rev: Vec<ProgramValue> = cond.iter().rev().cloned().collect();
-        // Push in reverse execution order: CondLoop (last) → cond → StackSizeAssert → body (first).
+        // Push in reverse execution order: CondLoop (last) → cond → body (first).
         exe_state.program_stack.push(PV::CondLoop { cond, body, expected_len });
         exe_state.program_stack.append(&mut cond_rev);
-        exe_state.program_stack.push(PV::StackSizeAssert {
-          expected_len,
-          message: "loop body must leave the stack unchanged",
-        });
+        exe_state.program_stack.append(&mut body_rev);
+      }
+    },
+    PV::CondLoopStart { cond, body } => {
+      // Initial condition of a while_do just ran. Pop its Bool and, if true,
+      // capture expected_len from the current stack and schedule subsequent iters.
+      let bool_val = match exe_state.data_stack.pop() {
+        Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Bool(b)))) => b,
+        Some(other) => panic!(
+          "while_do condition must leave a Bool on top of the stack, got {:?}", other
+        ),
+        None => panic!("while_do condition must leave a Bool on top of the stack (stack empty)"),
+      };
+      if bool_val {
+        let expected_len = exe_state.data_stack.len();
+        let mut body_rev: Vec<ProgramValue> = body.iter().rev().cloned().collect();
+        let mut cond_rev: Vec<ProgramValue> = cond.iter().rev().cloned().collect();
+        // Push in reverse execution order: CondLoop (last) → cond → body (first).
+        exe_state.program_stack.push(PV::CondLoop { cond, body, expected_len });
+        exe_state.program_stack.append(&mut cond_rev);
         exe_state.program_stack.append(&mut body_rev);
       }
     },

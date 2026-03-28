@@ -448,13 +448,15 @@ impl InterpretBuiltIn for DebugStack {
 /// Reads naturally as "while `cond`, do `body`": condition is below body on
 /// the stack, matching the left-to-right reading order of the call.
 ///
-/// Schedules `cond → CondLoop`. Each time `CondLoop` fires and the condition
-/// is true, it re-schedules `body → cond → CondLoop`; on false the loop exits.
-/// The body may never run if the condition is false on the first check.
+/// The initial condition run is unconstrained — it may consume or produce any
+/// number of stack values as long as it leaves exactly one `Bool` on top.
+/// After that Bool is popped, `expected_len` is captured from the live stack
+/// and all subsequent iterations must satisfy the combined invariant:
+/// body + condition together are net +1 (leaving exactly one `Bool`).
 ///
 /// Stack contract:
-///   - Condition: net +1 (leaves one `Bool` on top, all other items unchanged).
-///   - Body: net 0 (leaves the stack exactly as it found it).
+///   - Initial condition: leaves one `Bool` on top (stack may otherwise change).
+///   - Each subsequent body+condition pair: net +1 `Bool` relative to `expected_len`.
 #[derive(Debug)]
 struct WhileDo;
 
@@ -477,9 +479,8 @@ impl InterpretBuiltIn for WhileDo {
       DataValue::Substack { body: s, .. } => s,
       other => anyhow::bail!("while_do: condition must be a Substack, got {:?}", other),
     };
-    let expected_len = data_stack.len();
-    // Schedule: cond runs first, then CondLoop checks the bool.
-    program_stack.push(crate::ProgramValue::CondLoop { cond: cond.clone(), body, expected_len });
+    // Schedule: cond runs first, then CondLoopStart captures expected_len.
+    program_stack.push(crate::ProgramValue::CondLoopStart { cond: cond.clone(), body });
     let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
     program_stack.append(&mut cond_rev);
     Ok(vec![])
@@ -496,11 +497,12 @@ impl InterpretBuiltIn for WhileDo {
 /// the stack, matching the left-to-right reading order of the call.
 ///
 /// Schedules `body → cond → CondLoop` so the body always executes at least
-/// once. Subsequent iterations behave identically to `while_do`.
+/// once. `expected_len` is captured before the first body run; all subsequent
+/// body+condition pairs must satisfy the combined invariant: net +1 `Bool`.
 ///
 /// Stack contract:
-///   - Condition: net +1 (leaves one `Bool` on top, all other items unchanged).
-///   - Body: net 0 (leaves the stack exactly as it found it).
+///   - Each body+condition pair: net +1 `Bool` relative to `expected_len`
+///     (body may leave values for the condition to consume).
 #[derive(Debug)]
 struct DoWhile;
 
@@ -524,15 +526,11 @@ impl InterpretBuiltIn for DoWhile {
       other => anyhow::bail!("do_while: body must be a Substack, got {:?}", other),
     };
     let expected_len = data_stack.len();
-    // Schedule: body runs first, then StackSizeAssert checks it, then cond, then CondLoop.
+    // Schedule: body runs first, then cond, then CondLoop checks the combined result.
     program_stack.push(crate::ProgramValue::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
     let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
     let mut body_rev: Vec<crate::ProgramValue> = body.iter().rev().cloned().collect();
     program_stack.append(&mut cond_rev);
-    program_stack.push(crate::ProgramValue::StackSizeAssert {
-      expected_len,
-      message: "loop body must leave the stack unchanged",
-    });
     program_stack.append(&mut body_rev);
     Ok(vec![])
   }

@@ -215,11 +215,24 @@ pub enum ProgramValue {
   CondLoop {
     cond: Vec<ProgramValue>,
     body: Vec<ProgramValue>,
-    /// Stack depth recorded immediately after popping the condition and body
-    /// substacks — i.e. the "loop state" size. The condition must leave this
-    /// many items plus exactly one `Bool` on top; the body must leave exactly
-    /// this many items (net zero change).
+    /// Stack depth recorded after the first condition run completes (for
+    /// `while_do`) or before the first body run (for `do_while`) — i.e. the
+    /// "loop state" size. The condition must leave this many items plus exactly
+    /// one `Bool` on top; body+condition together must be net +1 Bool.
     expected_len: usize,
+  },
+  /// Sentinel placed on the program stack after the *initial* condition run of
+  /// a `while_do` loop. Unlike `CondLoop`, it does not know `expected_len` in
+  /// advance — it captures it from the live stack after the Bool is popped.
+  ///
+  /// When popped:
+  /// 1. Pops the `Bool` the condition must have left on top.
+  /// 2. If false: loop exits (no body runs).
+  /// 3. If true: captures `expected_len = stack.len()` and schedules
+  ///    `body → cond → CondLoop { expected_len }` for all subsequent iterations.
+  CondLoopStart {
+    cond: Vec<ProgramValue>,
+    body: Vec<ProgramValue>,
   },
   /// Sentinel placed on the program stack to validate the data stack (and
   /// optionally clean up a `StackBlock`) when popped.

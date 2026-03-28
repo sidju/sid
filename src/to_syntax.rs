@@ -63,6 +63,11 @@ impl ToSyntax for ProgramValue {
         let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
         format!("({}) ({}) while_do !", cond_syntax, body_syntax)
       },
+      ProgramValue::CondLoopStart { cond, body } => {
+        let cond_syntax: String = cond.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
+        let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
+        format!("({}) ({}) while_do !", cond_syntax, body_syntax)
+      },
       ProgramValue::TypeCheck { types, context, block_placed } => {
         let types_syntax: String = match types {
           Some(ts) => ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" "),

@@ -68,6 +68,8 @@ fn program_values_to_data_values(
       panic!("PushScope sentinel found where a data value was expected"),
     ProgramValue::PopScope =>
       panic!("PopScope sentinel found where a data value was expected"),
+    ProgramValue::CondLoopStart { .. } =>
+      panic!("CondLoopStart sentinel found where a data value was expected"),
   }).collect()
 }
 

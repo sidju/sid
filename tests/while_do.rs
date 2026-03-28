@@ -60,20 +60,26 @@ fn while_do_single_iteration() {
   assert_eq!(stack, vec![DataValue::Int(1)]);
 }
 
-/// Body pushing an extra item panics with a body-specific message.
+/// Initial condition can consume a setup value, with body and condition sharing
+/// the resulting expected_len. Demonstrates the relaxed combined invariant.
 #[test]
-#[should_panic(expected = "loop body must leave the stack unchanged")]
-fn while_do_body_wrong_size() {
-  // Body pushes an extra clone without removing it → net +1.
-  run_snippet("42 (true) (clone!) while_do !");
+fn while_do_initial_cond_consumes_setup_value() {
+  // Stack: [true, false] (true deeper, false on top).
+  // Initial cond (drop! clone!): drops false, clones true → [true, true]. Pops true → expected_len=1.
+  // Body (not! clone!): not!→false, clone!→[false,false] (body net+1, size=expected_len+1).
+  // Cond (drop! clone!): drop false, clone false→[false,false]. Pops false→exit.
+  // Final stack: [false].
+  let stack = run_snippet("true false (drop! clone!) (not! clone!) while_do !");
+  assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// Condition changing the stack size panics.
+/// Condition returning wrong stack size (via CondLoop on subsequent iter) panics.
 #[test]
 #[should_panic(expected = "condition must leave exactly one Bool")]
 fn while_do_condition_wrong_size() {
-  // Condition pushes two values instead of one Bool → size check fires.
-  run_snippet("42 (clone! clone!) (drop!) while_do !");
+  // Initial cond (true) enters loop. Body (clone! clone!) grows stack to 3.
+  // Subsequent cond (true) pushes one more → size 4. CondLoop expects 2. Fires.
+  run_snippet("42 (true) (clone! clone!) while_do !");
 }
 
 /// Condition returning a non-Bool panics.

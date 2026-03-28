@@ -30,7 +30,7 @@ malloc! types.str ptr_cast! clone!
 
 # Get the stack in order before we start looping, since the loop
 # must keep the stack consistent between each loop.
-($4 $3 $2 $1) # A reversal of top 4 stack entries
+($4 $3 $2 $1)! # A reversal of top 4 stack entries
 
 # Prepare the fgets arguments so they are easy to clone
 [$1 $2 $3]
@@ -58,7 +58,7 @@ types.null
   clone! {
     $types.null: (false),
     # When not null, print and continue looping if non-zero
-    types.any: (clone! puts! 0 eq! not!),
+    $types.any: (clone! ["%s" $1] printf! 0 eq! not!),
   } match!
 )
 do_while !
@@ -67,7 +67,9 @@ do_while !
 # the stack, so drop those.
 drop! drop!
 
-# I think fclose values are in place now
-fclose !
+# We should free our string buffer
+free !
 
+# Leaving only our file pointer
+fclose !
 0 eq! assert! # Check retval from fclose

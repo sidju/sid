@@ -59,12 +59,16 @@ fn do_while_two_iterations() {
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// Body pushing an extra item panics with a body-specific message.
+/// Body passing a value to the condition: body flips a bool and leaves a copy
+/// for the condition to use as the loop Bool directly.
 #[test]
-#[should_panic(expected = "loop body must leave the stack unchanged")]
-fn do_while_body_wrong_size() {
-  // Body pushes an extra clone without removing it → net +1, caught before condition runs.
-  run_snippet("42 (clone!) (false) do_while !");
+fn do_while_body_passes_value_to_condition() {
+  // Stack: true. expected_len = 1.
+  // Body: not! → false, clone! → [false, false] (size 2 = expected_len + 1).
+  // Condition: () empty — clone is already the Bool. CondLoop pops false → exit.
+  // Final stack: [false].
+  let stack = run_snippet("true (not! clone!) () do_while !");
+  assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
 /// Condition changing the stack size panics.
