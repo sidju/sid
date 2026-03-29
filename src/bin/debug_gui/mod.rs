@@ -9,15 +9,25 @@ use std::{
 };
 
 use crate::compile;
-use crate::Program;
-use sid::ExeState;
 use sid::ProgramValue;
+use sid::TemplateValue;
+use sid::DataValue;
+use sid::GlobalState;
 use sid::interpret_one;
 use sid::get_built_in_functions;
 use sid::ToSyntax;
 
+/// Interpreter state stored flat to avoid lifetime issues with ExeState<'a>.
+struct DebugState {
+    program_stack: Vec<ProgramValue>,
+    data_stack:    Vec<TemplateValue>,
+    local_scope:   HashMap<String, DataValue>,
+    scope_stack:   Vec<HashMap<String, DataValue>>,
+    global_scope:  HashMap<String, DataValue>,
+}
+
 pub struct SidDebuggerApp {
-    exe_state: Option<ExeState>,
+    debug_state: Option<DebugState>,
 
     opened_file: Option<PathBuf>,
     open_file_dialog: Option<FileDialog>,
@@ -26,7 +36,7 @@ pub struct SidDebuggerApp {
 impl SidDebuggerApp {
     pub fn new() -> Self {
         Self {
-            exe_state: None,
+            debug_state: None,
             opened_file: None,
             open_file_dialog: None,
         }
@@ -59,9 +69,14 @@ impl eframe::App for SidDebuggerApp {
                     *self = Self::new();
                 }
                 if ui.button("Step").clicked() || ui.input(|i| i.key_pressed(egui::Key::F10)) {
-                    if let Some(exe_state) = &mut self.exe_state {
+                    if let Some(s) = &mut self.debug_state {
+                        let mut global_state = GlobalState::new(&mut s.global_scope);
                         interpret_one(
-                            exe_state,
+                            &mut s.data_stack,
+                            &mut s.program_stack,
+                            &mut s.local_scope,
+                            &mut s.scope_stack,
+                            &mut global_state,
                             &get_built_in_functions()
                         );
                     }
@@ -76,13 +91,13 @@ impl eframe::App for SidDebuggerApp {
                             .expect("Failed to read file");
 
                         let program = compile(&file_content);
-                        let exe_state = ExeState {
+                        self.debug_state = Some(DebugState {
                             program_stack: vec![ProgramValue::Invoke],
-                            data_stack: program.instructions,
-                            local_scope: HashMap::new(),
-                            global_scope: program.global_scope,
-                        };
-                        self.exe_state = Some(exe_state);
+                            data_stack:    program.instructions,
+                            local_scope:   HashMap::new(),
+                            scope_stack:   Vec::new(),
+                            global_scope:  program.global_scope,
+                        });
                     }
                 }
             }
@@ -94,9 +109,7 @@ impl eframe::App for SidDebuggerApp {
                 painter_size = egui::vec2(500.0, 500.0);
             }
 
-            if self.exe_state.is_none() {
-                return;
-            }
+            let Some(s) = self.debug_state.as_ref() else { return; };
 
             // Display stuff 
             ui.label(format!("File: {:?}", self.opened_file.as_ref().unwrap()));
@@ -105,47 +118,43 @@ impl eframe::App for SidDebuggerApp {
                 ui.vertical(|ui| {
                     ui.label("program stack");
                     ui.label("-------------");
-                    let exe_state = self.exe_state.as_ref().unwrap();
-                    for (i, program_value) in exe_state.program_stack.iter().enumerate() {
+                    for (i, program_value) in s.program_stack.iter().enumerate() {
                         ui.label(format!("{}: {}", i, program_value.to_syntax()));
                     }
                 });
                 ui.vertical(|ui| {
-                    for data in 0..10 {
+                    for _data in 0..10 {
                         ui.label("|");
                     }
                 });
                 ui.vertical(|ui| {
                     ui.label("data stack");
                     ui.label("-------------");
-                    let exe_state = self.exe_state.as_ref().unwrap();
-                    for (i, data) in exe_state.data_stack.iter().enumerate() {
+                    for (i, data) in s.data_stack.iter().enumerate() {
                         ui.label(format!("{}: {}", i, data.to_syntax()));
                     }
                 });
                 ui.vertical(|ui| {
-                    for data in 0..10 {
+                    for _data in 0..10 {
                         ui.label("|");
                     }
                 });
                 ui.vertical(|ui| {
                     ui.label("local scope");
                     ui.label("-------------");
-                    let exe_state = self.exe_state.as_ref().unwrap();
-                    for (key, _data) in exe_state.local_scope.iter() {
+                    for (key, _data) in s.local_scope.iter() {
                         ui.label(format!("{:?}", key));
                     }
                 });
                 ui.vertical(|ui| {
-                    for data in 0..10 {
+                    for _data in 0..10 {
                         ui.label("|");
                     }
                 });
                 ui.vertical(|ui| {
                     ui.label("global scope");
                     ui.label("-------------");
-                    let exe_state = self.exe_state.as_ref().unwrap();
-                    for (key, _data) in exe_state.global_scope.iter() {
+                    for (key, _data) in s.global_scope.iter() {
                         ui.label(format!("{:?}", key));
                     }
                 });

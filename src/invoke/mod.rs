@@ -240,51 +240,62 @@ pub fn interpret<'a, 'b>(
     global_state,
   };
   while !exe_state.program_stack.is_empty() {
-    interpret_one(&mut exe_state, builtins)
+    interpret_one(
+      &mut exe_state.data_stack,
+      &mut exe_state.program_stack,
+      &mut exe_state.local_scope,
+      &mut exe_state.scope_stack,
+      &mut exe_state.global_state,
+      builtins,
+    )
   }
 }
 
 pub fn interpret_one<'a, 'b>(
-  exe_state: &mut ExeState<'a>,
-  builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
+  data_stack:    &mut Vec<TemplateValue>,
+  program_stack: &mut Vec<ProgramValue>,
+  local_scope:   &mut HashMap<String, DataValue>,
+  scope_stack:   &mut Vec<HashMap<String, DataValue>>,
+  global_state:  &mut GlobalState<'a>,
+  builtins:      &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
 ) {
   use ProgramValue as PV;
-  let operation = exe_state.program_stack.pop().unwrap();
+  let operation = program_stack.pop().unwrap();
   match operation {
-    PV::Data(v) => { exe_state.data_stack.push(TemplateValue::Literal(PV::Data(v))); },
+    PV::Data(v) => { data_stack.push(TemplateValue::Literal(PV::Data(v))); },
     PV::Template(t) => {
       let rendered = render_template(
         t,
-        &mut exe_state.data_stack,
-        &exe_state.local_scope,
-        &mut exe_state.global_state,
+        data_stack,
+        local_scope,
+        global_state,
         builtins,
       );
-      exe_state.data_stack.extend(rendered.into_iter().map(TemplateValue::from));
+      data_stack.extend(rendered.into_iter().map(TemplateValue::from));
     },
     PV::Invoke | PV::ComptimeInvoke => { invoke(
-      &mut exe_state.data_stack,
-      &mut exe_state.program_stack,
-      &mut exe_state.local_scope,
-      &mut exe_state.global_state,
+      data_stack,
+      program_stack,
+      local_scope,
+      global_state,
       builtins,
     ); },
     PV::StackSizeAssert { expected_len, message } => {
-      if exe_state.data_stack.len() != expected_len {
+      if data_stack.len() != expected_len {
         panic!(
           "{} (expected stack size {}, got {})",
-          message, expected_len, exe_state.data_stack.len()
+          message, expected_len, data_stack.len()
         );
       }
     },
     PV::CondLoop { cond, body, expected_len } => {
-      if exe_state.data_stack.len() != expected_len + 1 {
+      if data_stack.len() != expected_len + 1 {
         panic!(
           "loop condition must leave exactly one Bool on top (expected stack size {}, got {})",
-          expected_len + 1, exe_state.data_stack.len()
+          expected_len + 1, data_stack.len()
         );
       }
-      let bool_val = match exe_state.data_stack.pop() {
+      let bool_val = match data_stack.pop() {
         Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Bool(b)))) => b,
         Some(other) => panic!(
           "loop condition must leave a Bool on top of the stack, got {:?}", other
@@ -293,17 +304,17 @@ pub fn interpret_one<'a, 'b>(
       };
       if bool_val {
         // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
-        exe_state.program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
-        exe_state.program_stack.push(PV::Invoke);
-        exe_state.program_stack.push(PV::Data(cond));
-        exe_state.program_stack.push(PV::Invoke);
-        exe_state.program_stack.push(PV::Data(body));
+        program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
+        program_stack.push(PV::Invoke);
+        program_stack.push(PV::Data(cond));
+        program_stack.push(PV::Invoke);
+        program_stack.push(PV::Data(body));
       }
     },
     PV::CondLoopStart { cond, body } => {
       // Initial condition of a while_do just ran. Pop its Bool and, if true,
       // capture expected_len from the current stack and schedule subsequent iters.
-      let bool_val = match exe_state.data_stack.pop() {
+      let bool_val = match data_stack.pop() {
         Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Bool(b)))) => b,
         Some(other) => panic!(
           "while_do condition must leave a Bool on top of the stack, got {:?}", other
@@ -311,53 +322,53 @@ pub fn interpret_one<'a, 'b>(
         None => panic!("while_do condition must leave a Bool on top of the stack (stack empty)"),
       };
       if bool_val {
-        let expected_len = exe_state.data_stack.len();
+        let expected_len = data_stack.len();
         // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
-        exe_state.program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
-        exe_state.program_stack.push(PV::Invoke);
-        exe_state.program_stack.push(PV::Data(cond));
-        exe_state.program_stack.push(PV::Invoke);
-        exe_state.program_stack.push(PV::Data(body));
+        program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
+        program_stack.push(PV::Invoke);
+        program_stack.push(PV::Data(cond));
+        program_stack.push(PV::Invoke);
+        program_stack.push(PV::Data(body));
       }
     },
     PV::TypeCheck { types, context, block_placed } => {
       if block_placed {
         // Find the StackBlock inserted at invocation time.
-        let block_pos = exe_state.data_stack.iter().rposition(|tv| {
+        let block_pos = data_stack.iter().rposition(|tv| {
           matches!(tv, TemplateValue::Literal(ProgramValue::Data(DataValue::StackBlock)))
         }).unwrap_or_else(|| panic!("TypeCheck ({}): no StackBlock found on data stack", context));
         if let Some(ret_types) = types {
-          let results = &exe_state.data_stack[block_pos + 1..];
+          let results = &data_stack[block_pos + 1..];
           if results.len() != ret_types.len() {
             panic!(
               "TypeCheck ({}): expected {} return value(s) above StackBlock, got {}",
               context, ret_types.len(), results.len()
             );
           }
-          let results_mut = &mut exe_state.data_stack[block_pos + 1..];
-          check_type_contract(results_mut, &ret_types, "ret", &context, &exe_state.local_scope, exe_state.global_state.scope, builtins);
+          let results_mut = &mut data_stack[block_pos + 1..];
+          check_type_contract(results_mut, &ret_types, "ret", &context, local_scope, global_state.scope, builtins);
         }
-        exe_state.data_stack.remove(block_pos);
+        data_stack.remove(block_pos);
       } else if let Some(ret_types) = types {
-        check_type_contract(&mut exe_state.data_stack, &ret_types, "ret", &context, &exe_state.local_scope, exe_state.global_state.scope, builtins);
+        check_type_contract(data_stack, &ret_types, "ret", &context, local_scope, global_state.scope, builtins);
       }
     },
     PV::PushScope { names } => {
-      let old_scope = std::mem::replace(&mut exe_state.local_scope, HashMap::new());
-      exe_state.scope_stack.push(old_scope);
+      let old_scope = std::mem::replace(local_scope, HashMap::new());
+      scope_stack.push(old_scope);
       // Consume args from the top of the data stack (top-first order matches names[0]).
       // Labels are already resolved in-place by check_type_contract if needed.
       for name in names.into_iter() {
-        let value = match exe_state.data_stack.pop() {
+        let value = match data_stack.pop() {
           Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
           Some(other) => panic!("PushScope: arg '{}' is not a concrete value: {:?}", name, other),
           None => panic!("PushScope: expected arg '{}' but data stack was empty", name),
         };
-        exe_state.local_scope.insert(name, value);
+        local_scope.insert(name, value);
       }
     },
     PV::PopScope => {
-      exe_state.local_scope = exe_state.scope_stack.pop()
+      *local_scope = scope_stack.pop()
         .expect("PopScope with no matching PushScope");
     },
   }

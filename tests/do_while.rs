@@ -36,7 +36,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
     global_state,
   };
   while !exe_state.program_stack.is_empty() {
-    interpret_one(&mut exe_state, &builtins);
+    interpret_one(&mut exe_state.data_stack, &mut exe_state.program_stack, &mut exe_state.local_scope, &mut exe_state.scope_stack, &mut exe_state.global_state, &builtins);
   }
   exe_state.data_stack.into_iter().filter_map(|tv| {
     if let TemplateValue::Literal(ProgramValue::Data(v)) = tv { Some(v) } else { None }
