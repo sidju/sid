@@ -11,21 +11,116 @@ use super::{
   call_c_function,
   call_cfuncsig,
   get_from_scope,
+  resolve_if_label,
 };
 
-/// If `v` is a `Label`, resolve it from scope and return the resolved value.
-/// Otherwise return `v` unchanged.
-fn resolve_if_label(
-  v: DataValue,
-  local_scope: &HashMap<String, DataValue>,
-  global_scope: &HashMap<String, DataValue>,
-  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-) -> DataValue {
-  match v {
-    DataValue::Label(ref l) =>
-      get_from_scope(l, Some(local_scope), global_scope, builtins)
-        .unwrap_or(v),
-    other => other,
+/// Collect arguments for a callable from the data stack, supporting two
+/// calling conventions for N > 1 fixed params:
+///
+/// - **Stack form**: N items on the stack (top = last declared param).
+/// - **Struct form**: a single `DataValue::Map` whose label-keys exactly match
+///   `param_names`; values are extracted in declaration order.
+///   Only attempted when `param_names` is non-empty and N > 1.
+///
+/// For variadic callables (`variadic = true`):
+/// - Stack form: top item is a `List` of variadic args; below it are the N
+///   fixed params individually.
+/// - Struct form: top item is a Map with keys matching fixed params plus `"..."`;
+///   the `"..."` value must be a List of variadic args.
+///
+/// Each collected value is passed through `resolve` (label resolution).
+/// Returns `None` for 0-param functions.
+fn collect_args(
+  data_stack: &mut Vec<TemplateValue>,
+  param_names: &[String],
+  n: usize,
+  variadic: bool,
+  resolve: &dyn Fn(DataValue) -> DataValue,
+  context: &str,
+) -> Option<DataValue> {
+  let pop_one = |stack: &mut Vec<TemplateValue>, ctx: &str| -> DataValue {
+    match stack.pop() {
+      Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
+      Some(other) => panic!("{}: argument is not a concrete value: {:?}", ctx, other),
+      None => panic!("{}: expected argument but stack was empty", ctx),
+    }
+  };
+
+  if variadic {
+    // Struct form for variadic: single Map with fixed keys + "..." key.
+    if !param_names.is_empty() {
+      if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(_)))) = data_stack.last() {
+        if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(entries)))) = data_stack.last().cloned() {
+          let map_keys: std::collections::HashSet<&str> = entries.iter()
+            .filter_map(|(k, _)| if let DataValue::Label(l) = k { Some(l.as_str()) } else { None })
+            .collect();
+          let all_fixed_match = param_names[..n].iter().all(|p| map_keys.contains(p.as_str()));
+          let has_variadic_key = map_keys.contains("...");
+          if all_fixed_match && has_variadic_key && map_keys.len() == n + 1 {
+            data_stack.pop(); // consume the map
+            let mut items: Vec<DataValue> = param_names[..n].iter().map(|name| {
+              let v = entries.iter()
+                .find(|(k, _)| matches!(k, DataValue::Label(l) if l == name))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| unreachable!());
+              resolve(v)
+            }).collect();
+            let variadic_list = entries.iter()
+              .find(|(k, _)| matches!(k, DataValue::Label(l) if l == "..."))
+              .map(|(_, v)| v.clone())
+              .unwrap_or(DataValue::List(vec![]));
+            let variadic_items = match variadic_list {
+              DataValue::List(vs) => vs.into_iter().map(resolve).collect::<Vec<_>>(),
+              other => panic!("{}: '...' key must be a List, got {:?}", context, other),
+            };
+            items.extend(variadic_items);
+            return Some(DataValue::List(items));
+          }
+        }
+      }
+    }
+    // Stack form for variadic: top = List of variadic args, below = N fixed params.
+    let variadic_val = pop_one(data_stack, context);
+    let variadic_items = match resolve(variadic_val) {
+      DataValue::List(vs) => vs.into_iter().map(resolve).collect::<Vec<_>>(),
+      other => panic!("{}: expected List of variadic args on top of stack, got {:?}", context, other),
+    };
+    let mut fixed: Vec<DataValue> = (0..n).map(|_| resolve(pop_one(data_stack, context))).collect();
+    fixed.reverse();
+    fixed.extend(variadic_items);
+    return Some(DataValue::List(fixed));
+  }
+
+  match n {
+    0 => None,
+    1 => Some(resolve(pop_one(data_stack, context))),
+    _ => {
+      // Struct form: single Map with keys matching all param names.
+      if !param_names.is_empty() {
+        if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(_)))) = data_stack.last() {
+          if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(ref entries)))) = data_stack.last().cloned() {
+            let map_keys: std::collections::HashSet<&str> = entries.iter()
+              .filter_map(|(k, _)| if let DataValue::Label(l) = k { Some(l.as_str()) } else { None })
+              .collect();
+            if map_keys.len() == n && param_names.iter().all(|p| map_keys.contains(p.as_str())) {
+              data_stack.pop();
+              let items: Vec<DataValue> = param_names.iter().map(|name| {
+                let v = entries.iter()
+                  .find(|(k, _)| matches!(k, DataValue::Label(l) if l == name))
+                  .map(|(_, v)| v.clone())
+                  .unwrap_or_else(|| unreachable!());
+                resolve(v)
+              }).collect();
+              return Some(DataValue::List(items));
+            }
+          }
+        }
+      }
+      // Stack form: pop N items, reverse to get declaration order.
+      let mut items: Vec<DataValue> = (0..n).map(|_| resolve(pop_one(data_stack, context))).collect();
+      items.reverse();
+      Some(DataValue::List(items))
+    }
   }
 }
 
@@ -69,7 +164,7 @@ pub(crate) fn check_type_contract(
     if !expected.matches(actual) {
       // If it's a label, try resolving it before failing.
       if let DataValue::Label(_) = actual {
-        let resolved = resolve_if_label(actual.clone(), local_scope, global_scope, builtins);
+        let resolved = resolve_if_label(actual.clone(), Some(local_scope), global_scope, builtins);
         if expected.matches(&resolved) {
           data_stack[stack_idx] = TemplateValue::from(resolved);
           continue;
@@ -132,6 +227,29 @@ pub fn invoke<'a, 'b>(
         .map(|a| a.iter().map(|(n, _)| n.clone()).collect())
         .unwrap_or_default();
       if let Some(ref arg_fields) = args {
+        let n = arg_fields.len();
+        // Struct form: if N > 1 and the top of stack is a Map with matching keys,
+        // pop it and push individual values in top-first order so the existing
+        // check_type_contract + PushScope machinery handles them normally.
+        if n > 1 {
+          if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(ref entries)))) = data_stack.last().cloned() {
+            let map_keys: std::collections::HashSet<&str> = entries.iter()
+              .filter_map(|(k, _)| if let DataValue::Label(l) = k { Some(l.as_str()) } else { None })
+              .collect();
+            if map_keys.len() == n && names.iter().all(|p| map_keys.contains(p.as_str())) {
+              data_stack.pop();
+              // Push in reverse of names order so top of stack = names[0] (top-first convention).
+              for name in names.iter().rev() {
+                let v = entries.iter()
+                  .find(|(k, _)| matches!(k, DataValue::Label(l) if l == name))
+                  .map(|(_, v)| v.clone())
+                  .unwrap_or_else(|| unreachable!());
+                let v = resolve_if_label(v, Some(local_scope), global_state.scope, builtins);
+                data_stack.push(TemplateValue::from(v));
+              }
+            }
+          }
+        }
         let arg_types: Vec<SidType> = arg_fields.iter().map(|(_, t)| t.clone()).collect();
         check_type_contract(data_stack, &arg_types, "args", "substack", local_scope, global_state.scope, builtins);
         // Insert StackBlock below the args; args will be consumed by PushScope.
@@ -165,27 +283,21 @@ pub fn invoke<'a, 'b>(
     },
     // Invoking a linked CFuncSig: look up the symbol by name at call time.
     DataValue::CFuncSig(sig) => {
-      let param_count = sig.params.len();
-      // Variadic functions always take a List (fixed + variadic args together).
-      let arg = if sig.variadic || param_count > 1 {
-        match data_stack.pop() {
-          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
-            Some(DataValue::List(items)),
-          Some(other) => panic!(
-            "CFuncSig '{}': expected List, got {:?}",
-            sig.name, other
-          ),
-          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
-        }
-      } else if param_count == 1 {
-        match data_stack.pop() {
-          Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
-          Some(other) => panic!("CFuncSig '{}': argument is not a concrete value: {:?}", sig.name, other),
-          None => panic!("CFuncSig '{}': expected argument but stack was empty", sig.name),
-        }
-      } else {
-        None
+      let ctx = format!("CFuncSig '{}'", sig.name);
+      let resolve = |v: DataValue| match v {
+        DataValue::Label(ref l) =>
+          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+            .unwrap_or_else(|e| panic!("CFuncSig '{}': {}", sig.name, e)),
+        other => other,
       };
+      let arg = collect_args(
+        data_stack,
+        &sig.param_names,
+        sig.params.len(),
+        sig.variadic,
+        &resolve,
+        &ctx,
+      );
       if let Some(result) = call_cfuncsig(&sig, arg, &global_state.libraries)
         .unwrap_or_else(|e| panic!("CFuncSig '{}' call error: {}", sig.name, e))
       {
@@ -194,27 +306,21 @@ pub fn invoke<'a, 'b>(
     },
     // Invoking a dynamically-loaded C function via libffi.
     DataValue::CFunction(f) => {
-      let param_count = f.sig.params.len();
-      let arg = if param_count == 0 {
-        None
-      } else if param_count == 1 {
-        match data_stack.pop() {
-          Some(TemplateValue::Literal(ProgramValue::Data(v))) => Some(v),
-          Some(other) => panic!("CFunction '{}': argument is not a concrete value: {:?}", f.name, other),
-          None => panic!("CFunction '{}': expected argument but stack was empty", f.name),
-        }
-      } else {
-        // Multiple params: expect a List.
-        match data_stack.pop() {
-          Some(TemplateValue::Literal(ProgramValue::Data(DataValue::List(items)))) =>
-            Some(DataValue::List(items)),
-          Some(other) => panic!(
-            "CFunction '{}': expected List for {} params, got {:?}",
-            f.name, param_count, other
-          ),
-          None => panic!("CFunction '{}': expected argument but stack was empty", f.name),
-        }
+      let ctx = format!("CFunction '{}'", f.name);
+      let resolve = |v: DataValue| match v {
+        DataValue::Label(ref l) =>
+          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+            .unwrap_or_else(|e| panic!("CFunction '{}': {}", f.name, e)),
+        other => other,
       };
+      let arg = collect_args(
+        data_stack,
+        &f.sig.param_names,
+        f.sig.params.len(),
+        f.sig.variadic,
+        &resolve,
+        &ctx,
+      );
       if let Some(result) = call_c_function(&f, arg)
         .unwrap_or_else(|e| panic!("CFunction '{}' returned error: {}", f.name, e))
       {

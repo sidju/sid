@@ -27,4 +27,8 @@ typedef int MyInt;
 // Variadic functions are bridged; extra arg types are inferred at call time
 int printf(const char *format, ...);
 
+// Two-param function for testing multi-arg calling conventions
+// hypot(x, y) = sqrt(x^2 + y^2)
+double hypot(double x, double y);
+
 #endif

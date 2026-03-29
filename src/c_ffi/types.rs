@@ -53,9 +53,13 @@ pub struct CFuncSig {
     /// For variadic functions these are only the declared fixed parameters;
     /// extra argument types are inferred from the runtime values at call time.
     pub params: Vec<CType>,
+    /// Parameter names in declaration order, parallel to `params`.
+    /// For variadic functions an extra `"..."` entry is appended after the
+    /// fixed param names to name the variadic slot in struct-form calls.
+    /// Anonymous parameters (common in forward declarations) are synthesised
+    /// as `p0`, `p1`, … by the parser.
+    pub param_names: Vec<String>,
     /// `true` if the C function is variadic (`...`).
-    /// Variadic calls always expect a `DataValue::List` with at least
-    /// `params.len()` items; extra items are the variadic arguments.
     pub variadic: bool,
     /// Name under which the providing library is registered in
     /// [`GlobalState::libraries`].  Must be pre-loaded with `c_link_lib`
@@ -69,6 +73,7 @@ impl std::fmt::Debug for CFuncSig {
             .field("name", &self.name)
             .field("ret",  &self.ret)
             .field("params", &self.params)
+            .field("param_names", &self.param_names)
             .field("variadic", &self.variadic)
             .field("lib_name", &self.lib_name)
             .finish()
@@ -77,11 +82,12 @@ impl std::fmt::Debug for CFuncSig {
 impl Clone for CFuncSig {
     fn clone(&self) -> Self {
         CFuncSig {
-            name:     self.name.clone(),
-            ret:      self.ret.clone(),
-            params:   self.params.clone(),
-            variadic: self.variadic,
-            lib_name: self.lib_name.clone(),
+            name:        self.name.clone(),
+            ret:         self.ret.clone(),
+            params:      self.params.clone(),
+            param_names: self.param_names.clone(),
+            variadic:    self.variadic,
+            lib_name:    self.lib_name.clone(),
         }
     }
 }
@@ -93,6 +99,7 @@ impl PartialEq for CFuncSig {
         self.name == other.name
             && self.ret == other.ret
             && self.params == other.params
+            && self.param_names == other.param_names
             && self.variadic == other.variadic
     }
 }

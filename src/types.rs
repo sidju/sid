@@ -95,6 +95,24 @@ pub fn get_from_scope(
   Ok(current)
 }
 
+/// If `v` is a `Label`, resolve it from scope and return the resolved value.
+/// If the label is undefined in all scopes, return `v` unchanged.
+///
+/// Use [`get_from_scope`] directly when undefined labels should be an error.
+pub fn resolve_if_label(
+  v: DataValue,
+  local_scope: Option<&HashMap<String, DataValue>>,
+  global_scope: &HashMap<String, DataValue>,
+  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+) -> DataValue {
+  match v {
+    DataValue::Label(ref l) =>
+      get_from_scope(l, local_scope, global_scope, builtins)
+        .unwrap_or(v),
+    other => other,
+  }
+}
+
 pub trait InterpretBuiltIn: Debug {
   fn execute(
     &self,

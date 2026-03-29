@@ -40,39 +40,6 @@ fn resolve_to_program_values(
   rendered
 }
 
-/// Convert a resolved `ProgramValue` sequence into `DataValue`s for use inside
-/// data container literals (List, Set).
-///
-/// Nested templates are rendered recursively — for substacks/scripts the body
-/// stays as `Vec<ProgramValue>` (unexecuted).
-/// Invoke tokens and control-flow sentinels panic.
-fn program_values_to_data_values(
-  program_values: Vec<ProgramValue>,
-  parent_scope: &HashMap<String, DataValue>,
-  global_state: &mut GlobalState,
-  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-) -> Vec<DataValue> {
-  program_values.into_iter().flat_map(|pv| match pv {
-    ProgramValue::Data(v) => vec![v],
-    ProgramValue::Template(t) =>
-      render_template(t, &mut Vec::new(), parent_scope, global_state, builtins),
-    ProgramValue::Invoke | ProgramValue::ComptimeInvoke =>
-      panic!("Invoke token found where a data value was expected"),
-    ProgramValue::CondLoop { .. } =>
-      panic!("CondLoop sentinel found where a data value was expected"),
-    ProgramValue::StackSizeAssert { .. } =>
-      panic!("StackSizeAssert sentinel found where a data value was expected"),
-    ProgramValue::TypeCheck { .. } =>
-      panic!("TypeCheck sentinel found where a data value was expected"),
-    ProgramValue::PushScope { .. } =>
-      panic!("PushScope sentinel found where a data value was expected"),
-    ProgramValue::PopScope =>
-      panic!("PopScope sentinel found where a data value was expected"),
-    ProgramValue::CondLoopStart { .. } =>
-      panic!("CondLoopStart sentinel found where a data value was expected"),
-  }).collect()
-}
-
 /// Evaluate a resolved `ProgramValue` sequence on a fresh data stack,
 /// reusing the full interpreter dispatch via `interpret_one`. Used to evaluate
 /// multi-token Map key/value expressions inline at render time.
@@ -129,11 +96,11 @@ pub fn render_template(
     },
     TD::List(source) => {
       let pvs = resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_state.scope, builtins);
-      DataValue::List(program_values_to_data_values(pvs, parent_scope, global_state, builtins))
+      DataValue::List(eval_data_seq(pvs, parent_scope, global_state, builtins))
     },
     TD::Set(source) => {
       let pvs = resolve_to_program_values(source, &mut consumed_stack, parent_scope, global_state.scope, builtins);
-      DataValue::Set(program_values_to_data_values(pvs, parent_scope, global_state, builtins))
+      DataValue::Set(eval_data_seq(pvs, parent_scope, global_state, builtins))
     },
     TD::Map(pairs) => {
       let mut entries: Vec<(DataValue, DataValue)> = Vec::new();

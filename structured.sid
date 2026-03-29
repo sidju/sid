@@ -17,7 +17,7 @@
 
 # Open README.md for reading. fopen returns a FILE* (Pointer).
 readme
-  ["README.md" "r"] fopen!
+  "README.md" "r" fopen!
 local!
 
 # Allocate a string buffer using malloc
@@ -27,12 +27,12 @@ buf_size
 local!
 
 # Prepare the arguments
-($buf_size $readme])!
+($buf_size $readme)!
 
 # We can declare a function to print all lines in file pointer
 print_file {
-  buf_size: types.int,
-  file_ptr: types.any ptr!,
+  buf_size: $types.int,
+  file_ptr: $types.any ptr!,
 } [] (
 
   # We begin by allocating the required buffer
@@ -42,27 +42,31 @@ print_file {
 
   # With everything prepared we start a loop substack
   # (Since we take nothing from the stack defining args is a bit pointless)
-  {} [types.any ptr!] (
-    # Utilizing that we have everything in our parent scope we can template
-    # in those values rather than cloning
-    [$buf $buf_size $file_ptr] fgets!
+  {:} [types.any ptr!] (
+    # The data we need exists in parent scope, but not our local scope
+    # so we forward it in
+    buf $buf local!
+    buf_size $buf_size local!
+    file_ptr $file_ptr local!
+    # After that we can template with them
+    buf buf_size file_ptr fgets!
   ) typed_rets! typed_args!
   # The condition body is required to return a bool to indicate if the loop
   # is done, aside from that it can do weird stuff like printing
-  {result: types.any ptr!} [bool] (
+  {result: types.any ptr!} [$types.bool] (
     # We need this little dance to get the result onto the stack for match
     # (which accepts label arguments, wherefore it doesn't auto-convert)
     ($result)! {
       $types.null: (false),
       # When not null, print and continue looping if non-zero
-      $types.any: (["%s" $result] printf! 0 eq! not!),
+      $types.any: ("%s" [$result] printf! 0 eq! not!),
     } match!
   ) typed_rets! typed_args!
   do_while!
 
   # We should free our string buffer
   buf free!
-) typed_rets! typed_args! def!
+) typed_rets! typed_args! local!
 
 # Run the function with the prepared arguments
 print_file!

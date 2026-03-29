@@ -82,21 +82,27 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Opti
     });
 
     let ret = specifiers_to_ctype(&decl.specifiers, has_return_ptr)?;
-    let params = extract_params(&func_decl.parameters)?;
+    let (param_names, params) = extract_params(&func_decl.parameters)?;
+    let mut param_names = param_names;
+    if variadic {
+        param_names.push("...".to_owned());
+    }
 
-    Some(CFuncSig { name, ret, params, variadic, lib_name: lib_name.to_owned() })
+    Some(CFuncSig { name, ret, params, param_names, variadic, lib_name: lib_name.to_owned() })
 }
 
-/// Extract the parameter types from a function's parameter list.
+/// Extract the parameter names and types from a function's parameter list.
 ///
 /// Returns `None` if any parameter type cannot be bridged.
+/// Anonymous parameters (e.g. in forward declarations like `int foo(int, char*)`)
+/// are synthesised as `p0`, `p1`, … .
 fn extract_params(
     params: &[lang_c::span::Node<lang_c::ast::ParameterDeclaration>],
-) -> Option<Vec<CType>> {
+) -> Option<(Vec<String>, Vec<CType>)> {
     use lang_c::ast::*;
 
     if params.is_empty() {
-        return Some(vec![]);
+        return Some((vec![], vec![]));
     }
 
     // A single `void` parameter means the function takes no arguments.
@@ -111,12 +117,13 @@ fn extract_params(
                 )
             });
         if is_void_only {
-            return Some(vec![]);
+            return Some((vec![], vec![]));
         }
     }
 
-    let mut result = Vec::new();
-    for param_node in params {
+    let mut names = Vec::new();
+    let mut types = Vec::new();
+    for (idx, param_node) in params.iter().enumerate() {
         let param = &param_node.node;
 
         // Is there a pointer in the parameter's declarator?
@@ -128,10 +135,20 @@ fn extract_params(
 
         let ctype = specifiers_to_ctype(&param.specifiers, has_ptr)?;
         if ctype != CType::Void {
-            result.push(ctype);
+            // Extract the parameter name from the declarator identifier, or
+            // synthesise one for anonymous parameters.
+            let pname = param.declarator.as_ref().and_then(|d| {
+                if let DeclaratorKind::Identifier(id) = &d.node.kind.node {
+                    Some(id.node.name.clone())
+                } else {
+                    None
+                }
+            }).unwrap_or_else(|| format!("p{}", idx));
+            names.push(pname);
+            types.push(ctype);
         }
     }
-    Some(result)
+    Some((names, types))
 }
 
 /// Map a set of C declaration specifiers (plus a pointer flag) to a [`CType`].

@@ -70,6 +70,8 @@ fn parse_brace_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
     }
     let raw: String = buf.join("");
     if has_colon {
+        // {:} is the empty-map literal — a lone `:` with no entries.
+        if raw.trim() == ":" { return Ok(Template::map(vec![], 0)); }
         parse_map(&raw)
     } else {
         Ok(Template::set(parse_program_sequence(

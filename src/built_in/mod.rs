@@ -7,7 +7,7 @@ use crate::DataValue;
 use crate::GlobalState;
 use crate::SidType;
 use crate::c_ffi::{parse_c_header, open_library};
-use crate::types::get_from_scope;
+use crate::types::{get_from_scope, resolve_if_label};
 
 /// Convert a `CString` to a `String`, falling back to lossy UTF-8 conversion.
 fn cstring_to_string(cs: CString) -> String {
@@ -45,12 +45,7 @@ fn pop_arg_resolved(
   builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
 ) -> anyhow::Result<DataValue> {
   let v = pop_arg(data_stack, builtin_name)?;
-  Ok(match v {
-    DataValue::Label(ref l) =>
-      get_from_scope(l, Some(local_scope), global_scope, builtins)
-        .unwrap_or(v),
-    other => other,
-  })
+  Ok(resolve_if_label(v, Some(local_scope), global_scope, builtins))
 }
 
 // ── default scope ─────────────────────────────────────────────────────────────

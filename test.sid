@@ -17,50 +17,34 @@ load_scope @!
 ["libc.so.6" "stdio"] c_link_lib !
 ["libc.so.6" "stdlib"] c_link_lib !
 
-# Open README.md for reading. fopen returns a FILE* (Pointer).
-["README.md" "r"] fopen !
-# clone it, since fgets eats one copy
-clone!
 
-# Allocate a string, this time using malloc
-# Declare the size first and clone it, since malloc eats one copy
+# Open README.md for reading
+"README.md" "r" fopen! clone!
+
+# declare and clone buffer size
 4096 clone!
-# Then alloc, and clone since fgets eats one copy
+
+# Allocate and clone the string buffer
 malloc! types.str ptr_cast! clone!
 
-# Get the stack in order before we start looping, since the loop
-# must keep the stack consistent between each loop.
-($4 $3 $2 $1)! # A reversal of top 4 stack entries
+# Reorganize so the clones for cleanup are at the bottom of the stack
+# (file and buf on bottom, then file+buf_size+buf
+($1 $5 $4 $3 $2)!
+# After that we can build the loop body we actually want
+($1 $2 $3 fgets!)
 
-# Prepare the fgets arguments so they are easy to clone
-[$1 $2 $3]
-
-# With everything prepared we start a loop substack
+# Condition: clone so the null-arm can drop the spare; the any-arm consumes the
+# original.  To call printf(fmt, [args]) we first wrap the result in a list,
+# push the format string, then swap with ($2 $1)! to get [fmt [result]] order.
 (
-  # To be able to preserve the stack as though the body never ran
-  # we must duplicate the values we consume
-  clone!
-
-  # fgets(buf, n, FILE*) reads up to n-1 bytes and returns a char*.
-  fgets!
-)
-# Then the condition: fgets result is passed directly from the body
-(
-  # Clone so the any-arm can use the result; match consumes the clone.
   clone! {
     $types.null: (drop! false),
-    # When not null, print and continue looping if non-zero
-    $types.any: (["%s" $1] printf! 0 eq! not!),
+    $types.any: ([$1] "%s" ($2 $1)! printf! 0 eq! not!),
   } match!
 )
-do_while !
+do_while!
 
-# the loop exits with fgets args on the stack, so drop that.
-drop!
-
-# We should free our string buffer
-free !
-
-# Leaving only our file pointer
-fclose !
+# Cleanup: stack values should be in the right order so just run
+free!
+fclose!
 0 eq! assert! # Check retval from fclose

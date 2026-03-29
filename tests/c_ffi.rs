@@ -125,6 +125,181 @@ fn interpret_cfuncsig_in_global_scope() {
     interpret(program, data_stack, global_state, &builtins);
 }
 
+/// A label that resolves to a Float in scope is transparently passed as the
+/// argument to a CFuncSig call — no type-mismatch error.
+#[test]
+fn interpret_cfuncsig_label_arg_resolved() {
+    let sqrt_sig = get_sqrt_sig();
+
+    let mut global_scope = HashMap::new();
+    let mut global_state = GlobalState::new(&mut global_scope);
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
+    global_state.scope.insert("sqrt".to_owned(), DataValue::CFuncSig(sqrt_sig));
+    global_state.scope.insert("my_val".to_owned(), DataValue::Float(9.0));
+
+    let program = vec![ProgramValue::Invoke];
+    let data_stack = vec![
+        DataValue::Label("my_val".to_owned()).into(), // resolved → Float(9.0)
+        DataValue::Label("sqrt".to_owned()).into(),
+    ];
+    let builtins = get_interpret_builtins();
+
+    let mut data_stack_out = data_stack;
+    let mut program_stack = program;
+    let mut local_scope = HashMap::new();
+    let mut scope_stack = Vec::new();
+    while !program_stack.is_empty() {
+        interpret_one(
+            &mut data_stack_out,
+            &mut program_stack,
+            &mut local_scope,
+            &mut scope_stack,
+            &mut global_state,
+            &builtins,
+        );
+    }
+    match data_stack_out.as_slice() {
+        [TemplateValue::Literal(ProgramValue::Data(DataValue::Float(v)))] => {
+            assert!((v - 3.0).abs() < 1e-9, "sqrt(9.0) should be ~3.0, got {}", v);
+        }
+        other => panic!("expected [Float(~3.0)], got {:?}", other),
+    }
+}
+
+/// An undefined label passed as a CFuncSig argument panics with a clear
+/// "undefined label" message rather than a cryptic type-mismatch error.
+#[test]
+#[should_panic(expected = "undefined label")]
+fn interpret_cfuncsig_undefined_label_arg_panics() {
+    let sqrt_sig = get_sqrt_sig();
+
+    let mut global_scope = HashMap::new();
+    let mut global_state = GlobalState::new(&mut global_scope);
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
+    global_state.scope.insert("sqrt".to_owned(), DataValue::CFuncSig(sqrt_sig));
+
+    let program = vec![ProgramValue::Invoke];
+    let data_stack = vec![
+        DataValue::Label("no_such_val".to_owned()).into(), // undefined → panic
+        DataValue::Label("sqrt".to_owned()).into(),
+    ];
+    let builtins = get_interpret_builtins();
+    interpret(program, data_stack, global_state, &builtins);
+}
+
+/// Labels inside a variadic argument List are each resolved before the call.
+/// Variadic functions use stack form: fixed params on stack, then a List of variadic args on top.
+#[test]
+fn interpret_cfuncsig_variadic_stack_form() {
+    let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
+    let printf_sig = sigs.into_iter().find(|s| s.name == "printf").expect("printf not found");
+
+    let mut global_scope = HashMap::new();
+    let mut global_state = GlobalState::new(&mut global_scope);
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
+    global_state.scope.insert("printf".to_owned(), DataValue::CFuncSig(printf_sig));
+
+    let program = vec![ProgramValue::Invoke];
+    let data_stack = vec![
+        // format string (the 1 fixed param), then empty variadic list
+        DataValue::Str(std::ffi::CString::new("").unwrap()).into(),
+        DataValue::List(vec![]).into(), // variadic args (none)
+        DataValue::Label("printf".to_owned()).into(),
+    ];
+    let builtins = get_interpret_builtins();
+    interpret(program, data_stack, global_state, &builtins);
+}
+
+/// Multi-param non-variadic function: stack form pushes N items individually.
+/// hypot(3.0, 4.0) should return 5.0.
+#[test]
+fn interpret_cfuncsig_multi_param_stack_form() {
+    let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
+    let hypot_sig = sigs.into_iter().find(|s| s.name == "hypot").expect("hypot not found");
+
+    let mut global_scope = HashMap::new();
+    let mut global_state = GlobalState::new(&mut global_scope);
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
+    global_state.scope.insert("hypot".to_owned(), DataValue::CFuncSig(hypot_sig));
+
+    let program = vec![ProgramValue::Invoke];
+    // Deepest = first declared param (x=3.0), top = last declared param (y=4.0).
+    let data_stack = vec![
+        DataValue::Float(3.0).into(),
+        DataValue::Float(4.0).into(),
+        DataValue::Label("hypot".to_owned()).into(),
+    ];
+    let builtins = get_interpret_builtins();
+
+    let mut data_stack_out = data_stack;
+    let mut program_stack = program;
+    let mut local_scope = HashMap::new();
+    let mut scope_stack = Vec::new();
+    while !program_stack.is_empty() {
+        interpret_one(&mut data_stack_out, &mut program_stack, &mut local_scope,
+                      &mut scope_stack, &mut global_state, &builtins);
+    }
+    match data_stack_out.as_slice() {
+        [TemplateValue::Literal(ProgramValue::Data(DataValue::Float(v)))] => {
+            assert!((v - 5.0).abs() < 1e-9, "hypot(3,4) should be ~5.0, got {}", v);
+        }
+        other => panic!("expected [Float(~5.0)], got {:?}", other),
+    }
+}
+
+/// Multi-param non-variadic function: struct form passes a Map with param names as keys.
+/// hypot({x: 3.0, y: 4.0}) should return 5.0.
+#[test]
+fn interpret_cfuncsig_multi_param_struct_form() {
+    let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
+    let hypot_sig = sigs.into_iter().find(|s| s.name == "hypot").expect("hypot not found");
+
+    let mut global_scope = HashMap::new();
+    let mut global_state = GlobalState::new(&mut global_scope);
+    global_state.libraries.insert(
+        TEST_LIB.to_owned(),
+        sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
+    );
+    global_state.scope.insert("hypot".to_owned(), DataValue::CFuncSig(hypot_sig));
+
+    let program = vec![ProgramValue::Invoke];
+    let data_stack = vec![
+        DataValue::Map(vec![
+            (DataValue::Label("x".to_owned()), DataValue::Float(3.0)),
+            (DataValue::Label("y".to_owned()), DataValue::Float(4.0)),
+        ]).into(),
+        DataValue::Label("hypot".to_owned()).into(),
+    ];
+    let builtins = get_interpret_builtins();
+
+    let mut data_stack_out = data_stack;
+    let mut program_stack = program;
+    let mut local_scope = HashMap::new();
+    let mut scope_stack = Vec::new();
+    while !program_stack.is_empty() {
+        interpret_one(&mut data_stack_out, &mut program_stack, &mut local_scope,
+                      &mut scope_stack, &mut global_state, &builtins);
+    }
+    match data_stack_out.as_slice() {
+        [TemplateValue::Literal(ProgramValue::Data(DataValue::Float(v)))] => {
+            assert!((v - 5.0).abs() < 1e-9, "hypot({{x:3,y:4}}) should be ~5.0, got {}", v);
+        }
+        other => panic!("expected [Float(~5.0)], got {:?}", other),
+    }
+}
+
 // ── c_load_header builtin tests ───────────────────────────────────────────────
 
 #[test]
