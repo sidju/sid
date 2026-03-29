@@ -59,14 +59,10 @@ impl ToSyntax for ProgramValue {
         format!("# stack size assert: {} == {} items\n", message, expected_len)
       },
       ProgramValue::CondLoop { cond, body, .. } => {
-        let cond_syntax: String = cond.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
-        let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
-        format!("({}) ({}) while_do !", cond_syntax, body_syntax)
+        format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
       },
       ProgramValue::CondLoopStart { cond, body } => {
-        let cond_syntax: String = cond.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
-        let body_syntax: String = body.iter().map(|pv| pv.to_syntax()).collect::<Vec<_>>().join(" ");
-        format!("({}) ({}) while_do !", cond_syntax, body_syntax)
+        format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
       },
       ProgramValue::TypeCheck { types, context, block_placed } => {
         let types_syntax: String = match types {
@@ -96,8 +92,12 @@ impl ToSyntax for TemplateData {
       TemplateData::Set(v) => list_to_syntax(v, "{#Template", "}"),
       TemplateData::Map(pairs) => {
         let mut s = "{#Template".to_owned();
-        for (k, v) in pairs {
-          s = format!("{}\n {}: {} ", s, k.to_syntax(), v.to_syntax());
+        let n = pairs.len();
+        for (i, (k_tvs, v_tvs)) in pairs.into_iter().enumerate() {
+          let k_str = k_tvs.iter().map(|tv| tv.to_syntax()).collect::<Vec<_>>().join(" ");
+          let v_str = v_tvs.iter().map(|tv| tv.to_syntax()).collect::<Vec<_>>().join(" ");
+          let sep = if i + 1 < n { "," } else { "" };
+          s = format!("{}\n {}: {}{}", s, k_str, v_str, sep);
         }
         format!("{}\n}}", s)
       },
@@ -124,21 +124,21 @@ impl ToSyntax for SidType {
       SidType::Char  => "types.char".to_owned(),
       SidType::Str   => "types.str".to_owned(),
       SidType::Label => "types.label".to_owned(),
-      SidType::List(elem)             => format!("{} list @!", elem.to_syntax()),
+      SidType::List(elem)             => format!("{} list !", elem.to_syntax()),
       SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
       SidType::Fn { args, ret } => {
         let mut s = "fn".to_owned();
         if let Some(ts) = args {
           let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
-          s = format!("{} [{}] typed_args @!", s, inner);
+          s = format!("[{}] typed_args @! {}", inner, s);
         }
         if let Some(ts) = ret {
           let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
-          s = format!("{} [{}] typed_rets @!", s, inner);
+          s = format!("[{}] typed_rets @! {}", inner, s);
         }
         s
       },
-      SidType::Pointer(pointee)       => format!("{} ptr @!", pointee.to_syntax()),
+      SidType::Pointer(pointee)       => format!("{} ptr !", pointee.to_syntax()),
       SidType::Any                    => "types.any".to_owned(),
       SidType::Value                  => "types.value".to_owned(),
       SidType::Literal(v)             => v.to_syntax(),

@@ -58,16 +58,19 @@ fn compile(source: & str) -> Program {
   let parsed = parse_str(source).expect("parse error");
   // Create the global scope, with built-in functions and constants
   // (Implementations of this don't yet exist)
-  let global_scope = HashMap::new();
+  let mut global_scope = HashMap::new();
   let builtins = get_interpret_builtins();
   // Render that Vec<TemplateValue> as a Substack
-  let rendered = render_template(
-    Template::substack(parsed),
-    &mut Vec::new(), // Current stack, not applicable
-    &mut HashMap::new(), // Current local scope, not applicable
-    &global_scope,
-    &builtins,
-  );
+  let rendered = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      Template::substack(parsed),
+      &mut Vec::new(),
+      &HashMap::new(),
+      &mut gs,
+      &builtins,
+    )
+  };
   return Program{
     instructions: rendered,
     global_scope,

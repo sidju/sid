@@ -220,8 +220,8 @@ fn parse_map() {
     vec![
       Template::map(
         vec![
-          (DataValue::Label("x".to_owned()).into(), DataValue::Int(1).into()),
-          (DataValue::Label("y".to_owned()).into(), DataValue::Int(2).into()),
+          (vec![DataValue::Label("x".to_owned()).into()], vec![DataValue::Int(1).into()]),
+          (vec![DataValue::Label("y".to_owned()).into()], vec![DataValue::Int(2).into()]),
         ],
         0
       ).into(),

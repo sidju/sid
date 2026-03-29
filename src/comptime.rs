@@ -84,14 +84,11 @@ fn comptime_pass_template_data(
     TemplateData::Set(tvs) =>
       Ok(TemplateData::Set(comptime_pass(tvs, builtins, scope)?)),
     TemplateData::Map(pairs) => {
-      let mut new_pairs: Vec<(TemplateValue, TemplateValue)> = Vec::new();
-      for (k, v) in pairs {
-        let mut k_out = comptime_pass(vec![k], builtins, scope)?;
-        let mut v_out = comptime_pass(vec![v], builtins, scope)?;
-        if k_out.len() != 1 || v_out.len() != 1 {
-          bail!("Map key or value produced an unexpected number of elements after the comptime pass");
-        }
-        new_pairs.push((k_out.remove(0), v_out.remove(0)));
+      let mut new_pairs: Vec<(Vec<TemplateValue>, Vec<TemplateValue>)> = Vec::new();
+      for (k_tvs, v_tvs) in pairs {
+        let k_out = comptime_pass(k_tvs, builtins, scope)?;
+        let v_out = comptime_pass(v_tvs, builtins, scope)?;
+        new_pairs.push((k_out, v_out));
       }
       Ok(TemplateData::Map(new_pairs))
     }
@@ -134,7 +131,8 @@ fn render_comptime_template(
 
   // render_template uses scope as both parent and global scope here.
   let empty_scope = HashMap::new();
-  let rendered = render_template(template, &mut parent, &empty_scope, scope, builtins);
+  let mut gs = GlobalState::new(scope);
+  let rendered = render_template(template, &mut parent, &empty_scope, &mut gs, builtins);
 
   for v in rendered {
     stack.push(TemplateValue::from(v));

@@ -13,17 +13,41 @@ use super::{
   get_from_scope,
 };
 
-/// Check the top of `data_stack` against a type slice.
+/// If `v` is a `Label`, resolve it from scope and return the resolved value.
+/// Otherwise return `v` unchanged.
+fn resolve_if_label(
+  v: DataValue,
+  local_scope: &HashMap<String, DataValue>,
+  global_scope: &HashMap<String, DataValue>,
+  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+) -> DataValue {
+  match v {
+    DataValue::Label(ref l) =>
+      get_from_scope(l, Some(local_scope), global_scope, builtins)
+        .unwrap_or(v),
+    other => other,
+  }
+}
+
+/// Check the top of `data_stack` against a type slice, resolving any labels
+/// via scope before matching.
 ///
 /// `types[0]` = top of stack, `types[N-1]` = deepest checked item.
 /// Panics with a detailed message on the first mismatch, or if the stack is
 /// too shallow. `label` ("args"/"ret") and `context` (callable description)
 /// are included in any panic message.
-fn check_type_contract(
-  data_stack: &[TemplateValue],
+///
+/// When a label is found that doesn't match the expected type, it is resolved
+/// from scope and the resolved value replaces it in `data_stack` in-place
+/// before the check proceeds.
+pub(crate) fn check_type_contract(
+  data_stack: &mut [TemplateValue],
   types: &[SidType],
   label: &str,
   context: &str,
+  local_scope: &HashMap<String, DataValue>,
+  global_scope: &HashMap<String, DataValue>,
+  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
 ) {
   if data_stack.len() < types.len() {
     panic!(
@@ -31,7 +55,10 @@ fn check_type_contract(
       context, label, types.len(), data_stack.len()
     );
   }
-  for (i, (tv, expected)) in data_stack.iter().rev().zip(types.iter()).enumerate() {
+  let stack_len = data_stack.len();
+  for (i, expected) in types.iter().enumerate() {
+    let stack_idx = stack_len - 1 - i;
+    let tv = &data_stack[stack_idx];
     let actual = match tv {
       TemplateValue::Literal(ProgramValue::Data(v)) => v,
       other => panic!(
@@ -40,6 +67,18 @@ fn check_type_contract(
       ),
     };
     if !expected.matches(actual) {
+      // If it's a label, try resolving it before failing.
+      if let DataValue::Label(_) = actual {
+        let resolved = resolve_if_label(actual.clone(), local_scope, global_scope, builtins);
+        if expected.matches(&resolved) {
+          data_stack[stack_idx] = TemplateValue::from(resolved);
+          continue;
+        }
+        panic!(
+          "{} {} check failed: position {} (0=top): expected {:?}, label resolved to {:?}",
+          context, label, i, expected, &data_stack[stack_idx]
+        );
+      }
       panic!(
         "{} {} check failed: position {} (0=top): expected {:?}, got {:?}",
         context, label, i, expected, actual
@@ -94,7 +133,7 @@ pub fn invoke<'a, 'b>(
         .unwrap_or_default();
       if let Some(ref arg_fields) = args {
         let arg_types: Vec<SidType> = arg_fields.iter().map(|(_, t)| t.clone()).collect();
-        check_type_contract(data_stack, &arg_types, "args", "substack");
+        check_type_contract(data_stack, &arg_types, "args", "substack", local_scope, global_state.scope, builtins);
         // Insert StackBlock below the args; args will be consumed by PushScope.
         let n = arg_fields.len();
         let insert_pos = data_stack.len() - n;
@@ -218,7 +257,7 @@ pub fn interpret_one<'a, 'b>(
         t,
         &mut exe_state.data_stack,
         &exe_state.local_scope,
-        &exe_state.global_state.scope,
+        &mut exe_state.global_state,
         builtins,
       );
       exe_state.data_stack.extend(rendered.into_iter().map(TemplateValue::from));
@@ -253,12 +292,12 @@ pub fn interpret_one<'a, 'b>(
         None => unreachable!(),
       };
       if bool_val {
-        let mut body_rev: Vec<ProgramValue> = body.iter().rev().cloned().collect();
-        let mut cond_rev: Vec<ProgramValue> = cond.iter().rev().cloned().collect();
-        // Push in reverse execution order: CondLoop (last) → cond → body (first).
-        exe_state.program_stack.push(PV::CondLoop { cond, body, expected_len });
-        exe_state.program_stack.append(&mut cond_rev);
-        exe_state.program_stack.append(&mut body_rev);
+        // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
+        exe_state.program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
+        exe_state.program_stack.push(PV::Invoke);
+        exe_state.program_stack.push(PV::Data(cond));
+        exe_state.program_stack.push(PV::Invoke);
+        exe_state.program_stack.push(PV::Data(body));
       }
     },
     PV::CondLoopStart { cond, body } => {
@@ -273,12 +312,12 @@ pub fn interpret_one<'a, 'b>(
       };
       if bool_val {
         let expected_len = exe_state.data_stack.len();
-        let mut body_rev: Vec<ProgramValue> = body.iter().rev().cloned().collect();
-        let mut cond_rev: Vec<ProgramValue> = cond.iter().rev().cloned().collect();
-        // Push in reverse execution order: CondLoop (last) → cond → body (first).
-        exe_state.program_stack.push(PV::CondLoop { cond, body, expected_len });
-        exe_state.program_stack.append(&mut cond_rev);
-        exe_state.program_stack.append(&mut body_rev);
+        // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
+        exe_state.program_stack.push(PV::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
+        exe_state.program_stack.push(PV::Invoke);
+        exe_state.program_stack.push(PV::Data(cond));
+        exe_state.program_stack.push(PV::Invoke);
+        exe_state.program_stack.push(PV::Data(body));
       }
     },
     PV::TypeCheck { types, context, block_placed } => {
@@ -295,17 +334,19 @@ pub fn interpret_one<'a, 'b>(
               context, ret_types.len(), results.len()
             );
           }
-          check_type_contract(results, &ret_types, "ret", &context);
+          let results_mut = &mut exe_state.data_stack[block_pos + 1..];
+          check_type_contract(results_mut, &ret_types, "ret", &context, &exe_state.local_scope, exe_state.global_state.scope, builtins);
         }
         exe_state.data_stack.remove(block_pos);
       } else if let Some(ret_types) = types {
-        check_type_contract(&exe_state.data_stack, &ret_types, "ret", &context);
+        check_type_contract(&mut exe_state.data_stack, &ret_types, "ret", &context, &exe_state.local_scope, exe_state.global_state.scope, builtins);
       }
     },
     PV::PushScope { names } => {
       let old_scope = std::mem::replace(&mut exe_state.local_scope, HashMap::new());
       exe_state.scope_stack.push(old_scope);
       // Consume args from the top of the data stack (top-first order matches names[0]).
+      // Labels are already resolved in-place by check_type_contract if needed.
       for name in names.into_iter() {
         let value = match exe_state.data_stack.pop() {
           Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,

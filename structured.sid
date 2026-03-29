@@ -1,0 +1,72 @@
+# Read a file and print its contents using C standard I/O via the FFI.
+#
+# Parse the stdio header at compile time and bake the CFuncSig values into the
+# compiled output.  lib_name is derived from the filename stem ("stdio").
+# load_scope @! then immediately unpacks the resulting struct into scope, so
+# every function becomes directly addressable as a label.
+
+"/usr/include/stdio.h" c_load_header @! load_scope @!
+"/usr/include/stdlib.h" c_load_header @! load_scope @!
+
+# Link the actual shared library at runtime under the name "stdio" (matching
+# the stem used above).  The list form lets us load libc.so.6 but register it
+# under a different key.
+
+["libc.so.6" "stdio"] c_link_lib!
+["libc.so.6" "stdlib"] c_link_lib!
+
+# Open README.md for reading. fopen returns a FILE* (Pointer).
+readme
+  ["README.md" "r"] fopen!
+local!
+
+# Allocate a string buffer using malloc
+# Alloc, cast to str pointer, and save to local: one copy stays on the outer stack for
+buf_size
+  4096
+local!
+
+# Prepare the arguments
+($buf_size $readme])!
+
+# We can declare a function to print all lines in file pointer
+print_file {
+  buf_size: types.int,
+  file_ptr: types.any ptr!,
+} [] (
+
+  # We begin by allocating the required buffer
+  buf
+    buf_size malloc! types.str ptr_cast!
+  local!
+
+  # With everything prepared we start a loop substack
+  # (Since we take nothing from the stack defining args is a bit pointless)
+  {} [types.any ptr!] (
+    # Utilizing that we have everything in our parent scope we can template
+    # in those values rather than cloning
+    [$buf $buf_size $file_ptr] fgets!
+  ) typed_rets! typed_args!
+  # The condition body is required to return a bool to indicate if the loop
+  # is done, aside from that it can do weird stuff like printing
+  {result: types.any ptr!} [bool] (
+    # We need this little dance to get the result onto the stack for match
+    # (which accepts label arguments, wherefore it doesn't auto-convert)
+    ($result)! {
+      $types.null: (false),
+      # When not null, print and continue looping if non-zero
+      $types.any: (["%s" $result] printf! 0 eq! not!),
+    } match!
+  ) typed_rets! typed_args!
+  do_while!
+
+  # We should free our string buffer
+  buf free!
+) typed_rets! typed_args! def!
+
+# Run the function with the prepared arguments
+print_file!
+
+# Leaving only our file pointer
+readme fclose!
+0 eq! assert! # Check retval from fclose

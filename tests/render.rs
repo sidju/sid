@@ -6,18 +6,21 @@ pub fn render_test_fixture(
   template: Template,
   mut parent_stack: Vec<TemplateValue>,
   parent_scope: HashMap<String, DataValue>,
-  global_scope: HashMap<String, DataValue>,
+  mut global_scope: HashMap<String, DataValue>,
   expected_parent_stack: Vec<TemplateValue>,
   expected_rendered_stack: Vec<DataValue>,
 ) {
   let builtins = get_interpret_builtins();
-  let rendered_stack = render_template(
-    template,
-    &mut parent_stack,
-    &parent_scope,
-    &global_scope,
-    &builtins,
-  );
+  let rendered_stack = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      template,
+      &mut parent_stack,
+      &parent_scope,
+      &mut gs,
+      &builtins,
+    )
+  };
   // Verify remaining parent stack
   assert_eq!(
     parent_stack,
@@ -145,8 +148,8 @@ fn render_map() {
   render_test_fixture(
     Template::map(
       vec![
-        (DataValue::Label("x".to_owned()).into(), DataValue::Int(1).into()),
-        (DataValue::Label("y".to_owned()).into(), DataValue::Int(2).into()),
+        (vec![DataValue::Label("x".to_owned()).into()], vec![DataValue::Int(1).into()]),
+        (vec![DataValue::Label("y".to_owned()).into()], vec![DataValue::Int(2).into()]),
       ],
       0
     ),

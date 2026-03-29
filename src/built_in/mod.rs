@@ -471,18 +471,12 @@ impl InterpretBuiltIn for WhileDo {
   ) -> anyhow::Result<Vec<DataValue>> {
     let body_val = pop_arg(data_stack, "while_do")?;
     let cond_val = pop_arg(data_stack, "while_do")?;
-    let body = match body_val {
-      DataValue::Substack { body: s, .. } => s,
-      other => anyhow::bail!("while_do: body must be a Substack, got {:?}", other),
-    };
-    let cond = match cond_val {
-      DataValue::Substack { body: s, .. } => s,
-      other => anyhow::bail!("while_do: condition must be a Substack, got {:?}", other),
-    };
-    // Schedule: cond runs first, then CondLoopStart captures expected_len.
-    program_stack.push(crate::ProgramValue::CondLoopStart { cond: cond.clone(), body });
-    let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
-    program_stack.append(&mut cond_rev);
+    match &body_val { DataValue::Substack { .. } => {}, other => anyhow::bail!("while_do: body must be a Substack, got {:?}", other) }
+    match &cond_val { DataValue::Substack { .. } => {}, other => anyhow::bail!("while_do: condition must be a Substack, got {:?}", other) }
+    // Schedule: cond runs first (as a proper invocation), then CondLoopStart captures expected_len.
+    program_stack.push(crate::ProgramValue::CondLoopStart { cond: cond_val.clone(), body: body_val });
+    program_stack.push(crate::ProgramValue::Invoke);
+    program_stack.push(crate::ProgramValue::Data(cond_val));
     Ok(vec![])
   }
 }
@@ -517,21 +511,15 @@ impl InterpretBuiltIn for DoWhile {
   ) -> anyhow::Result<Vec<DataValue>> {
     let cond_val = pop_arg(data_stack, "do_while")?;
     let body_val = pop_arg(data_stack, "do_while")?;
-    let cond = match cond_val {
-      DataValue::Substack { body: s, .. } => s,
-      other => anyhow::bail!("do_while: condition must be a Substack, got {:?}", other),
-    };
-    let body = match body_val {
-      DataValue::Substack { body: s, .. } => s,
-      other => anyhow::bail!("do_while: body must be a Substack, got {:?}", other),
-    };
+    match &cond_val { DataValue::Substack { .. } => {}, other => anyhow::bail!("do_while: condition must be a Substack, got {:?}", other) }
+    match &body_val { DataValue::Substack { .. } => {}, other => anyhow::bail!("do_while: body must be a Substack, got {:?}", other) }
     let expected_len = data_stack.len();
-    // Schedule: body runs first, then cond, then CondLoop checks the combined result.
-    program_stack.push(crate::ProgramValue::CondLoop { cond: cond.clone(), body: body.clone(), expected_len });
-    let mut cond_rev: Vec<crate::ProgramValue> = cond.iter().rev().cloned().collect();
-    let mut body_rev: Vec<crate::ProgramValue> = body.iter().rev().cloned().collect();
-    program_stack.append(&mut cond_rev);
-    program_stack.append(&mut body_rev);
+    // Schedule: body runs first (as a proper invocation), then cond, then CondLoop.
+    program_stack.push(crate::ProgramValue::CondLoop { cond: cond_val.clone(), body: body_val.clone(), expected_len });
+    program_stack.push(crate::ProgramValue::Invoke);
+    program_stack.push(crate::ProgramValue::Data(cond_val));
+    program_stack.push(crate::ProgramValue::Invoke);
+    program_stack.push(crate::ProgramValue::Data(body_val));
     Ok(vec![])
   }
 }
@@ -568,7 +556,65 @@ impl InterpretBuiltIn for FnType {
   }
 }
 
-/// Sets the `args` type annotation on a `Substack`/`Script` or `SidType::Fn`.
+/// Pops a type value and wraps it in `SidType::Pointer`.
+///
+/// Usage: `T ptr !` → `T ptr` type
+#[derive(Debug)]
+struct PtrType;
+
+impl InterpretBuiltIn for PtrType {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let raw = pop_arg(data_stack, "ptr")?;
+    let resolved = match raw {
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+        .map_err(|_| anyhow::anyhow!("ptr: undefined label '{}'", l))?,
+      other => other,
+    };
+    let inner = match resolved {
+      DataValue::Type(t) => t,
+      other => anyhow::bail!("ptr: expected a type, got {:?}", other),
+    };
+    Ok(vec![DataValue::Type(SidType::Pointer(Box::new(inner)))])
+  }
+}
+
+/// Pops a type value and wraps it in `SidType::List`.
+///
+/// Usage: `T list !` → `T list` type (homogeneous list of T)
+#[derive(Debug)]
+struct ListType;
+
+impl InterpretBuiltIn for ListType {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let raw = pop_arg(data_stack, "list")?;
+    let resolved = match raw {
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+        .map_err(|_| anyhow::anyhow!("list: undefined label '{}'", l))?,
+      other => other,
+    };
+    let inner = match resolved {
+      DataValue::Type(t) => t,
+      other => anyhow::bail!("list: expected a type, got {:?}", other),
+    };
+    Ok(vec![DataValue::Type(SidType::List(Box::new(inner)))])
+  }
+}
+
+
 ///
 /// Usage: `callable {name: T, …} typed_args !`
 ///
@@ -590,8 +636,8 @@ impl InterpretBuiltIn for TypedArgs {
     _local_scope: &mut HashMap<String, DataValue>,
     _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
-    let types_val  = pop_arg(data_stack, "typed_args")?;
     let target_val = pop_arg(data_stack, "typed_args")?;
+    let types_val  = pop_arg(data_stack, "typed_args")?;
 
     // Validate shape: must be a Map with all label keys.
     let label_map_ty = SidType::Map {
@@ -645,8 +691,8 @@ impl InterpretBuiltIn for TypedRets {
     _local_scope: &mut HashMap<String, DataValue>,
     _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
-    let types_val  = pop_arg(data_stack, "typed_rets")?;
     let target_val = pop_arg(data_stack, "typed_rets")?;
+    let types_val  = pop_arg(data_stack, "typed_rets")?;
     // Reverse: user writes deepest-first, stored top-first.
     let types: Vec<SidType> = list_to_type_vec(types_val, "typed_rets")?.into_iter().rev().collect();
     match target_val {
@@ -864,6 +910,8 @@ static DEBUG_STACK:   DebugStack  = DebugStack;
 static WHILE_DO:         WhileDo        = WhileDo;
 static DO_WHILE:         DoWhile        = DoWhile;
 static FN_TYPE:          FnType         = FnType;
+static PTR_TYPE:         PtrType        = PtrType;
+static LIST_TYPE:        ListType       = ListType;
 static TYPED_ARGS:       TypedArgs      = TypedArgs;
 static TYPED_RETS:       TypedRets      = TypedRets;
 static UNTYPED_ARGS:     UntypedArgs    = UntypedArgs;
@@ -887,6 +935,8 @@ fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>)
   m.insert("ptr_cast",        &PTR_CAST);
   m.insert("debug_stack",     &DEBUG_STACK);
   m.insert("fn",              &FN_TYPE);
+  m.insert("ptr",             &PTR_TYPE);
+  m.insert("list",            &LIST_TYPE);
   m.insert("typed_args",      &TYPED_ARGS);
   m.insert("typed_rets",      &TYPED_RETS);
   m.insert("untyped_args",    &UNTYPED_ARGS);

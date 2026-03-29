@@ -10,13 +10,16 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
-  let rendered = render_template(
-    Template::substack((after_comptime, 0)),
-    &mut vec![],
-    &HashMap::new(),
-    &global_scope,
-    &comptime_builtins,
-  );
+  let rendered = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      Template::substack((after_comptime, 0)),
+      &mut vec![],
+      &HashMap::new(),
+      &mut gs,
+      &comptime_builtins,
+    )
+  };
   let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
   let builtins = get_interpret_builtins();
   let mut global_scope_for_run = global_scope;
@@ -49,7 +52,7 @@ fn fn_pushes_unconstrained_fn_type() {
 #[test]
 fn typed_args_sets_args_on_substack() {
   // Struct map deepest-first: n is the single (bottom) arg.
-  let stack = run_snippet("(42) {n: $types.int} typed_args !");
+  let stack = run_snippet("{n: $types.int} (42) typed_args !");
   assert_eq!(stack, vec![DataValue::Substack {
     body: vec![ProgramValue::Data(DataValue::Int(42))],
     args: Some(vec![("n".to_owned(), SidType::Int)]),
@@ -60,7 +63,7 @@ fn typed_args_sets_args_on_substack() {
 #[test]
 fn typed_args_sets_args_on_fn_type() {
   // Fn type stores type-only (no names at the type level).
-  let stack = run_snippet("fn ! {n: $types.int} typed_args !");
+  let stack = run_snippet("{n: $types.int} fn ! typed_args !");
   assert_eq!(stack, vec![DataValue::Type(SidType::Fn {
     args: Some(vec![SidType::Int]),
     ret:  None,
@@ -70,7 +73,7 @@ fn typed_args_sets_args_on_fn_type() {
 #[test]
 fn typed_args_error_on_non_map() {
   // Plain lists are rejected.
-  let result = std::panic::catch_unwind(|| run_snippet("(42) 1 typed_args !"));
+  let result = std::panic::catch_unwind(|| run_snippet("{} (42) typed_args !"));
   assert!(result.is_err());
 }
 
@@ -78,7 +81,7 @@ fn typed_args_error_on_non_map() {
 
 #[test]
 fn typed_rets_sets_ret_on_substack() {
-  let stack = run_snippet("(42) [$types.int] typed_rets !");
+  let stack = run_snippet("[$types.int] (42) typed_rets !");
   assert_eq!(stack, vec![DataValue::Substack {
     body: vec![ProgramValue::Data(DataValue::Int(42))],
     args: None,
@@ -88,7 +91,7 @@ fn typed_rets_sets_ret_on_substack() {
 
 #[test]
 fn typed_rets_sets_ret_on_fn_type() {
-  let stack = run_snippet("fn ! [$types.bool] typed_rets !");
+  let stack = run_snippet("[$types.bool] fn ! typed_rets !");
   assert_eq!(stack, vec![DataValue::Type(SidType::Fn {
     args: None,
     ret:  Some(vec![SidType::Bool]),
@@ -99,7 +102,7 @@ fn typed_rets_sets_ret_on_fn_type() {
 
 #[test]
 fn typed_args_and_rets_chained_on_substack() {
-  let stack = run_snippet("(42) {n: $types.int} typed_args ! [$types.bool] typed_rets !");
+  let stack = run_snippet("[$types.bool] {n: $types.int} (42) typed_args ! typed_rets !");
   assert_eq!(stack, vec![DataValue::Substack {
     body: vec![ProgramValue::Data(DataValue::Int(42))],
     args: Some(vec![("n".to_owned(), SidType::Int)]),
@@ -109,7 +112,7 @@ fn typed_args_and_rets_chained_on_substack() {
 
 #[test]
 fn typed_args_and_rets_chained_on_fn_type() {
-  let stack = run_snippet("fn ! {n: $types.int} typed_args ! [$types.bool] typed_rets !");
+  let stack = run_snippet("[$types.bool] {n: $types.int} fn ! typed_args ! typed_rets !");
   assert_eq!(stack, vec![DataValue::Type(SidType::Fn {
     args: Some(vec![SidType::Int]),
     ret:  Some(vec![SidType::Bool]),
@@ -120,7 +123,7 @@ fn typed_args_and_rets_chained_on_fn_type() {
 
 #[test]
 fn untyped_args_clears_args_on_substack() {
-  let stack = run_snippet("(42) {n: $types.int} typed_args ! untyped_args !");
+  let stack = run_snippet("{n: $types.int} (42) typed_args ! untyped_args !");
   assert_eq!(stack, vec![DataValue::Substack {
     body: vec![ProgramValue::Data(DataValue::Int(42))],
     args: None,
@@ -130,7 +133,7 @@ fn untyped_args_clears_args_on_substack() {
 
 #[test]
 fn untyped_rets_clears_ret_on_substack() {
-  let stack = run_snippet("(42) [$types.int] typed_rets ! untyped_rets !");
+  let stack = run_snippet("[$types.int] (42) typed_rets ! untyped_rets !");
   assert_eq!(stack, vec![DataValue::Substack {
     body: vec![ProgramValue::Data(DataValue::Int(42))],
     args: None,
@@ -146,7 +149,7 @@ fn typed_args_contract_passes_on_match() {
   // 42 is int (deepest, bound as a), true is bool (top, bound as b).
   // Struct written deepest-first: {a: int, b: bool}.
   // Body is empty — args have been consumed into scope.
-  let stack = run_snippet("42 true () {a: $types.int, b: $types.bool} typed_args ! !");
+  let stack = run_snippet("42 true {a: $types.int, b: $types.bool} () typed_args ! !");
   assert_eq!(stack, vec![]);
 }
 
@@ -156,20 +159,20 @@ fn typed_args_contract_passes_on_match() {
 #[should_panic(expected = "args check failed")]
 fn typed_args_contract_catches_wrong_order() {
   // true pushed first (deepest), 42 on top — opposite of {a: int, b: bool}.
-  run_snippet("true 42 () {a: $types.int, b: $types.bool} typed_args ! !");
+  run_snippet("true 42 {a: $types.int, b: $types.bool} () typed_args ! !");
 }
 
 /// Args check fires before the body runs.
 #[test]
 #[should_panic(expected = "args check failed")]
 fn typed_args_contract_fails_on_type_mismatch() {
-  run_snippet("true () {n: $types.int} typed_args ! !");
+  run_snippet("true {n: $types.int} () typed_args ! !");
 }
 
 /// Ret check passes when the body leaves the right types.
 #[test]
 fn typed_rets_contract_passes_on_match() {
-  let stack = run_snippet("(42 true) [$types.int $types.bool] typed_rets ! !");
+  let stack = run_snippet("[$types.int $types.bool] (42 true) typed_rets ! !");
   assert_eq!(stack, vec![DataValue::Int(42), DataValue::Bool(true)]);
 }
 
@@ -179,26 +182,26 @@ fn typed_rets_contract_passes_on_match() {
 #[should_panic(expected = "ret check failed")]
 fn typed_rets_contract_catches_wrong_order() {
   // Body leaves bool deepest and int on top — opposite of [int bool].
-  run_snippet("(true 42) [$types.int $types.bool] typed_rets ! !");
+  run_snippet("[$types.int $types.bool] (true 42) typed_rets ! !");
 }
 
 /// Ret check fires after the body runs.
 #[test]
 #[should_panic(expected = "ret check failed")]
 fn typed_rets_contract_fails_on_type_mismatch() {
-  run_snippet("(true) [$types.int] typed_rets ! !");
+  run_snippet("[$types.int] (true) typed_rets ! !");
 }
 
 // ── untyped_args / untyped_rets ───────────────────────────────────────────────
 
 #[test]
 fn untyped_args_clears_args_on_fn_type() {
-  let stack = run_snippet("fn ! {n: $types.int} typed_args ! untyped_args !");
+  let stack = run_snippet("{n: $types.int} fn ! typed_args ! untyped_args !");
   assert_eq!(stack, vec![DataValue::Type(SidType::Fn { args: None, ret: None })]);
 }
 
 #[test]
 fn untyped_rets_clears_ret_on_fn_type() {
-  let stack = run_snippet("fn ! [$types.bool] typed_rets ! untyped_rets !");
+  let stack = run_snippet("[$types.bool] fn ! typed_rets ! untyped_rets !");
   assert_eq!(stack, vec![DataValue::Type(SidType::Fn { args: None, ret: None })]);
 }

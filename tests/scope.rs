@@ -1,4 +1,5 @@
-/// Integration tests for substack scope isolation and `local!` / `load_local!`.
+/// Integration tests for substack scope isolation, `local!` / `load_local!`,
+/// and lazy label resolution at typed argument sites.
 ///
 /// Verifies:
 /// - Each substack gets a fresh local scope (bindings don't leak to the parent).
@@ -15,13 +16,16 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
-  let rendered = render_template(
-    Template::substack((after_comptime, 0)),
-    &mut vec![],
-    &HashMap::new(),
-    &global_scope,
-    &comptime_builtins,
-  );
+  let rendered = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      Template::substack((after_comptime, 0)),
+      &mut vec![],
+      &HashMap::new(),
+      &mut gs,
+      &comptime_builtins,
+    )
+  };
   let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
   let builtins = get_interpret_builtins();
   let mut global_scope_for_run = global_scope;
@@ -48,13 +52,16 @@ fn run_and_check_outer_scope(source: &str) -> HashMap<String, DataValue> {
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
-  let rendered = render_template(
-    Template::substack((after_comptime, 0)),
-    &mut vec![],
-    &HashMap::new(),
-    &global_scope,
-    &comptime_builtins,
-  );
+  let rendered = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      Template::substack((after_comptime, 0)),
+      &mut vec![],
+      &HashMap::new(),
+      &mut gs,
+      &comptime_builtins,
+    )
+  };
   let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
   let builtins = get_interpret_builtins();
   let mut global_scope_for_run = global_scope;
@@ -109,14 +116,35 @@ fn load_local_unpacks_struct_fields() {
   assert_eq!(result, vec![DataValue::Str(std::ffi::CString::new("hello").unwrap())]);
 }
 
-// ── StackBlock prevents reading caller's stack from a typed substack ──────────
+// ── lazy label resolution at typed arg sites ─────────────────────────────────
+
+/// A bare label whose name is in scope is automatically resolved when the
+/// expected arg type does not accept labels (e.g. types.int).
+#[test]
+fn bare_label_resolved_at_typed_arg_site() {
+  // Bind x=42 in local scope, then push the bare label `x`.
+  // typed_args expects an int: label doesn't match, so it's resolved to 42.
+  // Body re-pushes n via a nested template.
+  let result = run_snippet("(x 42 local! x {n: $types.int} (($n) !) typed_args ! !) !");
+  assert_eq!(result, vec![DataValue::Int(42)]);
+}
+
+/// A bare label is NOT resolved when the expected arg type is types.label —
+/// the label value itself is the intended argument.
+#[test]
+fn bare_label_kept_when_label_type_expected() {
+  // x is in scope (=42), but the arg type is types.label so the label is kept as-is.
+  // Body re-pushes n (which is the label `x`) via a nested template.
+  let result = run_snippet("(x 42 local! x {n: $types.label} (($n) !) typed_args ! !) !");
+  assert_eq!(result, vec![DataValue::Label("x".to_owned())]);
+}
 
 #[test]
 fn typed_substack_caller_stack_preserved_below_args() {
   // Stack: 99 (deep), 42 (the int arg consumed by PushScope into local scope as n).
   // Body is empty — arg is in local scope, not on the stack.
   // StackBlock is cleaned up; 99 must survive untouched below it.
-  let result = run_snippet("99 42 () {n: $types.int} typed_args ! !");
+  let result = run_snippet("99 42 {n: $types.int} () typed_args ! !");
   assert_eq!(result, vec![DataValue::Int(99)]);
 }
 
@@ -124,7 +152,7 @@ fn typed_substack_caller_stack_preserved_below_args() {
 fn stackblock_removed_after_typed_substack_completes() {
   // A scope function with no ret — the StackBlock must be cleaned up so
   // subsequent operations see the correct stack depth.
-  let result = run_snippet("42 () {n: $types.int} typed_args ! !");
+  let result = run_snippet("42 {n: $types.int} () typed_args ! !");
   assert_eq!(result, vec![]);
 }
 
@@ -132,6 +160,6 @@ fn stackblock_removed_after_typed_substack_completes() {
 fn scope_fn_args_accessible_via_sub_template() {
   // Arg consumed into local scope is accessible from a sub-template inside the body.
   // n=42 is consumed by PushScope. Body: inner template ($n) renders n from local scope.
-  let result = run_snippet("42 (($n) !) {n: $types.int} typed_args ! !");
+  let result = run_snippet("42 {n: $types.int} (($n) !) typed_args ! !");
   assert_eq!(result, vec![DataValue::Int(42)]);
 }

@@ -14,13 +14,16 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
   let comptime_builtins = get_comptime_builtins();
   let after_comptime = comptime_pass(parsed.0, &comptime_builtins, &mut global_scope)
     .expect("comptime error");
-  let rendered = render_template(
-    Template::substack((after_comptime, 0)),
-    &mut vec![],
-    &HashMap::new(),
-    &global_scope,
-    &comptime_builtins,
-  );
+  let rendered = {
+    let mut gs = GlobalState::new(&mut global_scope);
+    render_template(
+      Template::substack((after_comptime, 0)),
+      &mut vec![],
+      &HashMap::new(),
+      &mut gs,
+      &comptime_builtins,
+    )
+  };
   let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
   let builtins = get_interpret_builtins();
   let mut global_scope_for_run = global_scope;

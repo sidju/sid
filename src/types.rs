@@ -213,8 +213,8 @@ pub enum ProgramValue {
   /// (stack depth must equal `expected_len + 1`), then either re-queues
   /// `body → cond → CondLoop` (true) or exits (false).
   CondLoop {
-    cond: Vec<ProgramValue>,
-    body: Vec<ProgramValue>,
+    cond: DataValue,
+    body: DataValue,
     /// Stack depth recorded after the first condition run completes (for
     /// `while_do`) or before the first body run (for `do_while`) — i.e. the
     /// "loop state" size. The condition must leave this many items plus exactly
@@ -231,8 +231,8 @@ pub enum ProgramValue {
   /// 3. If true: captures `expected_len = stack.len()` and schedules
   ///    `body → cond → CondLoop { expected_len }` for all subsequent iterations.
   CondLoopStart {
-    cond: Vec<ProgramValue>,
-    body: Vec<ProgramValue>,
+    cond: DataValue,
+    body: DataValue,
   },
   /// Sentinel placed on the program stack to validate the data stack (and
   /// optionally clean up a `StackBlock`) when popped.
@@ -285,7 +285,7 @@ impl Template {
   pub fn set(parsed: (Vec<TemplateValue>, usize)) -> Self {
     Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
   }
-  pub fn map(pairs: Vec<(TemplateValue, TemplateValue)>, consumes: usize) -> Self {
+  pub fn map(pairs: Vec<(Vec<TemplateValue>, Vec<TemplateValue>)>, consumes: usize) -> Self {
     Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes, comptime: false }
   }
   pub fn script(parsed: (Vec<TemplateValue>, usize)) -> Self {
@@ -304,9 +304,10 @@ pub enum TemplateData {
   List(Vec<TemplateValue>),
   Script(Vec<TemplateValue>),
   Set(Vec<TemplateValue>),
-  /// `{key: value, …}` — keys are any TemplateValue (labels treated as values).
-  /// Produces a `DataValue::Map`; use `struct!` to further narrow to a Struct.
-  Map(Vec<(TemplateValue, TemplateValue)>),
+  /// `{key: value, …}` — keys and values are multi-token sequences evaluated
+  /// inline at render time.  Produces a `DataValue::Map`; use `struct!` to
+  /// further narrow to a Struct.
+  Map(Vec<(Vec<TemplateValue>, Vec<TemplateValue>)>),
 }
 
 #[derive(PartialEq, Debug, Clone)]

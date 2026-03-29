@@ -80,55 +80,82 @@ fn parse_brace_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
 }
 
 /// Parse `key: value, …` pairs from the collected brace body.
-/// Keys are any single TemplateValue (labels are kept as values, not resolved).
+/// Keys are multi-token sequences up to `:` at depth 0.
+/// Values are multi-token sequences up to `,` or end at depth 0.
 fn parse_map(raw: &str) -> Result<Template> {
     use unicode_segmentation::UnicodeSegmentation;
     let mut iter = raw.graphemes(true).peekable();
-    let mut pairs: Vec<(TemplateValue, TemplateValue)> = Vec::new();
+    let mut pairs: Vec<(Vec<TemplateValue>, Vec<TemplateValue>)> = Vec::new();
     let mut max_consumed = 0usize;
 
-    let track = |tv: &TemplateValue, max: &mut usize| {
-        if let TemplateValue::ParentStackMove(i) = tv { *max = (*max).max(*i); }
+    let track_seq = |tvs: &[TemplateValue], max: &mut usize| {
+        for tv in tvs {
+            if let TemplateValue::ParentStackMove(i) = tv { *max = (*max).max(*i); }
+        }
+    };
+
+    // Skip leading whitespace
+    let skip_ws = |iter: &mut std::iter::Peekable<_>| {
+        loop {
+            match iter.peek() {
+                Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
+                _ => break,
+            }
+        }
     };
 
     loop {
-        // Parse key — exactly one value
-        let key = match parse_template_value(&mut iter)? {
-            Some(v) => v,
-            None => break,
-        };
-        track(&key, &mut max_consumed);
+        skip_ws(&mut iter);
 
-        // Skip whitespace, then expect `:`
+        // Check for end of input
+        if iter.peek().is_none() { break; }
+
+        // Parse key tokens until `:` at depth 0
+        let mut key_tvs: Vec<TemplateValue> = Vec::new();
         loop {
-            match iter.peek() {
-                Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
-                _ => break,
+            skip_ws(&mut iter);
+            match iter.peek().map(|s| *s) {
+                None => bail!("unexpected end of input while parsing map key"),
+                Some(":") => { iter.next(); break; }
+                _ => {
+                    match parse_template_value(&mut iter)? {
+                        Some(v) => key_tvs.push(v),
+                        None => bail!("unexpected end of input while parsing map key"),
+                    }
+                }
             }
         }
-        match iter.next().as_deref() {
-            Some(":") => (),
-            other => bail!("expected ':' after map key, got {:?}", other),
+        if key_tvs.is_empty() {
+            bail!("map key expression is empty");
         }
+        track_seq(&key_tvs, &mut max_consumed);
 
-        let val = match parse_template_value(&mut iter)? {
-            Some(v) => v,
-            None => bail!("expected map value, got end of input"),
-        };
-        track(&val, &mut max_consumed);
-
-        pairs.push((key, val));
-
-        // Skip whitespace, then expect `,` or end
+        // Parse value tokens until `,` or end at depth 0
+        let mut val_tvs: Vec<TemplateValue> = Vec::new();
         loop {
-            match iter.peek() {
-                Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
-                _ => break,
+            skip_ws(&mut iter);
+            match iter.peek().map(|s| *s) {
+                None | Some(",") => break,
+                _ => {
+                    match parse_template_value(&mut iter)? {
+                        Some(v) => val_tvs.push(v),
+                        None => break,
+                    }
+                }
             }
         }
+        if val_tvs.is_empty() {
+            bail!("map value expression is empty");
+        }
+        track_seq(&val_tvs, &mut max_consumed);
+
+        pairs.push((key_tvs, val_tvs));
+
+        // Consume trailing `,` if present
+        skip_ws(&mut iter);
         match iter.peek().map(|s| *s) {
             None => break,
-            Some(",") => continue,
+            Some(",") => { iter.next(); }
             Some(other) => bail!("expected ',' or end of map, got {:?}", other),
         }
     }
