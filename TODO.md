@@ -1,14 +1,13 @@
-- Decide if we should favor in-crate or external tests
 - Probably add `pointer_write`, `pointer_read` and `pointer_offset`, to enable the
   same basic pointer usage that C allows through base syntax `*(p+2)`.
-- Implement `if`/`else` (can be expressed as a two-case `match`, but a dedicated
-  built-in may be ergonomic).
 
 ## Static analysis (future)
 
 - Validate that all arms of a `match` leave the same net stack change.
   Requires static stack-effect tracking rather than speculative execution.
   Deferred until a static analysis pass exists.
+- Run a static type validation, ideally adding type-restrictions or other
+  meta-types to perform the most detailed validation possible.
 
 ## Documentation and examples (next up)
 
