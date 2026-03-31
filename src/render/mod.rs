@@ -25,7 +25,7 @@ fn resolve_to_program_values(
   for entry in source { match entry {
     TV::Literal(v) => { rendered.push(v); },
     TV::ParentLabel(l) => {
-      let v = get_from_scope(&l, Some(parent_scope), global_scope, builtins)
+      let v = get_from_scope(&l, Some(parent_scope), Some(global_scope), Some(builtins))
         .expect("label resolution failed");
       rendered.push(v.into())
     },

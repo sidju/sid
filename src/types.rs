@@ -67,16 +67,16 @@ impl<'a> GlobalState<'a> {
 pub fn get_from_scope(
   label: &str,
   local: Option<&HashMap<String, DataValue>>,
-  global: &HashMap<String, DataValue>,
-  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  global: Option<&HashMap<String, DataValue>>,
+  builtins: Option<&HashMap<&str, &dyn InterpretBuiltIn>>,
 ) -> anyhow::Result<DataValue> {
   let mut segments = label.split('.');
   let root = segments.next().unwrap();
 
   let mut current = local.and_then(|l| l.get(root))
-    .or_else(|| global.get(root))
+    .or_else(|| global.and_then(|g| g.get(root)))
     .cloned()
-    .or_else(|| builtins.contains_key(root).then(|| DataValue::BuiltIn(root.to_owned())))
+    .or_else(|| builtins.and_then(|b| b.contains_key(root).then(|| DataValue::BuiltIn(root.to_owned()))))
     .ok_or_else(|| anyhow::anyhow!("undefined label '{}'", label))?;
 
   for segment in segments {
@@ -102,8 +102,8 @@ pub fn get_from_scope(
 pub fn resolve_if_label(
   v: DataValue,
   local_scope: Option<&HashMap<String, DataValue>>,
-  global_scope: &HashMap<String, DataValue>,
-  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  global_scope: Option<&HashMap<String, DataValue>>,
+  builtins: Option<&HashMap<&str, &dyn InterpretBuiltIn>>,
 ) -> DataValue {
   match v {
     DataValue::Label(ref l) =>

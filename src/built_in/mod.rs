@@ -45,10 +45,21 @@ fn pop_arg_resolved(
   builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
 ) -> anyhow::Result<DataValue> {
   let v = pop_arg(data_stack, builtin_name)?;
-  Ok(resolve_if_label(v, Some(local_scope), global_scope, builtins))
+  Ok(resolve_if_label(v, Some(local_scope), Some(global_scope), Some(builtins)))
 }
 
-// ── default scope ─────────────────────────────────────────────────────────────
+/// Pop the top concrete `DataValue` from the data stack, expecting a `Label`.
+/// Returns the label string, or an error if the value is not a label.
+fn pop_label(
+  data_stack: &mut Vec<crate::TemplateValue>,
+  builtin_name: &str,
+) -> anyhow::Result<String> {
+  match pop_arg(data_stack, builtin_name)? {
+    DataValue::Label(l) => Ok(l),
+    other => anyhow::bail!("{}: expected a label, got {:?}", builtin_name, other),
+  }
+}
+
 
 /// Returns the default global scope, pre-populated with a `types` struct
 /// containing the primitive type values (`types.bool`, `types.int`, etc.) and
@@ -378,7 +389,7 @@ impl InterpretBuiltIn for PtrCast {
     };
     let pointee_ty = match new_type {
       DataValue::Type(ty) => ty,
-      DataValue::Label(name) => match get_from_scope(&name, Some(local_scope), global_state.scope, builtins)? {
+      DataValue::Label(name) => match get_from_scope(&name, Some(local_scope), Some(global_state.scope), Some(builtins))? {
         DataValue::Type(ty) => ty,
         other => anyhow::bail!("ptr_cast: label '{}' resolves to {:?}, not a Type", name, other),
       },
@@ -590,7 +601,7 @@ impl InterpretBuiltIn for PtrType {
   ) -> anyhow::Result<Vec<DataValue>> {
     let raw = pop_arg(data_stack, "ptr")?;
     let resolved = match raw {
-      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), Some(global_state.scope), Some(builtins))
         .map_err(|_| anyhow::anyhow!("ptr: undefined label '{}'", l))?,
       other => other,
     };
@@ -619,7 +630,7 @@ impl InterpretBuiltIn for ListType {
   ) -> anyhow::Result<Vec<DataValue>> {
     let raw = pop_arg(data_stack, "list")?;
     let resolved = match raw {
-      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), Some(global_state.scope), Some(builtins))
         .map_err(|_| anyhow::anyhow!("list: undefined label '{}'", l))?,
       other => other,
     };
@@ -949,7 +960,7 @@ impl InterpretBuiltIn for Match {
     let cases_raw = pop_arg(data_stack, "match")?;
     // Resolve a label to its value, supporting dot-notation namespaces.
     let cases_val = match cases_raw {
-      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+      DataValue::Label(ref l) => get_from_scope(l, Some(local_scope), Some(global_state.scope), Some(builtins))
         .map_err(|_| anyhow::anyhow!("match: undefined label '{}'", l))?,
       other => other,
     };
@@ -975,8 +986,78 @@ impl InterpretBuiltIn for Match {
   }
 }
 
+// ── scope lookup built-ins ────────────────────────────────────────────────────
+
+/// Pops a label and looks it up following the normal local → global → builtins
+/// priority order.  At comptime the local scope is empty, so this effectively
+/// falls through to global scope.
+#[derive(Debug)]
+struct Get;
+
+impl InterpretBuiltIn for Get {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let label = pop_label(data_stack, "get")?;
+    let value = get_from_scope(&label, Some(local_scope), Some(global_state.scope), Some(builtins))
+      .map_err(|_| anyhow::anyhow!("get: '{}' not found", label))?;
+    Ok(vec![value])
+  }
+}
+
+/// Pops a label and looks it up in local scope only.  Errors if not found.
+/// At comptime the local scope is always empty, so this will always error.
+#[derive(Debug)]
+struct GetLocal;
+
+impl InterpretBuiltIn for GetLocal {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    _global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let label = pop_label(data_stack, "get_local")?;
+    let value = get_from_scope(&label, Some(local_scope), None, None)
+      .map_err(|_| anyhow::anyhow!("get_local: '{}' not found in local scope", label))?;
+    Ok(vec![value])
+  }
+}
+
+/// Pops a label and looks it up in global scope only, bypassing local scope.
+/// Useful at comptime to access global definitions (e.g. `types.int get_global @!`),
+/// and at runtime to access a global that is shadowed by a local binding.
+#[derive(Debug)]
+struct GetGlobal;
+
+impl InterpretBuiltIn for GetGlobal {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let label = pop_label(data_stack, "get_global")?;
+    let value = get_from_scope(&label, None, Some(global_state.scope), Some(builtins))
+      .map_err(|_| anyhow::anyhow!("get_global: '{}' not found in global scope", label))?;
+    Ok(vec![value])
+  }
+}
+
 // Module-level statics so both get_interpret_builtins and get_comptime_builtins
 // can reference them without duplicating declarations.
+static GET:           Get         = Get;
+static GET_LOCAL:     GetLocal    = GetLocal;
+static GET_GLOBAL:    GetGlobal   = GetGlobal;
 static LOCAL:         Local       = Local;
 static LOAD_LOCAL:    LoadLocal   = LoadLocal;
 static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
@@ -1008,6 +1089,9 @@ static MATCH:            Match          = Match;
 /// Runtime-only built-ins (`c_link_lib`, `ptr_read_cstr`) are NOT included here;
 /// add them separately in `get_interpret_builtins`.
 fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>) {
+  m.insert("get",          &GET);
+  m.insert("get_local",    &GET_LOCAL);
+  m.insert("get_global",   &GET_GLOBAL);
   m.insert("c_load_header", &C_LOAD_HEADER);
   m.insert("load_scope",    &LOAD_SCOPE);
   m.insert("local",         &LOCAL);

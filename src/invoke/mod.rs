@@ -164,7 +164,7 @@ pub(crate) fn check_type_contract(
     if !expected.matches(actual) {
       // If it's a label, try resolving it before failing.
       if let DataValue::Label(_) = actual {
-        let resolved = resolve_if_label(actual.clone(), Some(local_scope), global_scope, builtins);
+        let resolved = resolve_if_label(actual.clone(), Some(local_scope), Some(global_scope), Some(builtins));
         if expected.matches(&resolved) {
           data_stack[stack_idx] = TemplateValue::from(resolved);
           continue;
@@ -204,7 +204,7 @@ pub fn invoke<'a, 'b>(
   // Resolve labels via scope, falling back to built-ins at lowest priority.
   let value = match data_stack.pop() {
     Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Label(l)))) =>
-      get_from_scope(&l, Some(local_scope), global_state.scope, builtins)
+      get_from_scope(&l, Some(local_scope), Some(global_state.scope), Some(builtins))
         .expect("label resolution failed"),
     Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
     Some(other) => panic!("Invoked on non-data stack entry: {:?}", other),
@@ -244,7 +244,7 @@ pub fn invoke<'a, 'b>(
                   .find(|(k, _)| matches!(k, DataValue::Label(l) if l == name))
                   .map(|(_, v)| v.clone())
                   .unwrap_or_else(|| unreachable!());
-                let v = resolve_if_label(v, Some(local_scope), global_state.scope, builtins);
+                let v = resolve_if_label(v, Some(local_scope), Some(global_state.scope), Some(builtins));
                 data_stack.push(TemplateValue::from(v));
               }
             }
@@ -286,7 +286,7 @@ pub fn invoke<'a, 'b>(
       let ctx = format!("CFuncSig '{}'", sig.name);
       let resolve = |v: DataValue| match v {
         DataValue::Label(ref l) =>
-          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+          get_from_scope(l, Some(local_scope), Some(global_state.scope), Some(builtins))
             .unwrap_or_else(|e| panic!("CFuncSig '{}': {}", sig.name, e)),
         other => other,
       };
@@ -309,7 +309,7 @@ pub fn invoke<'a, 'b>(
       let ctx = format!("CFunction '{}'", f.name);
       let resolve = |v: DataValue| match v {
         DataValue::Label(ref l) =>
-          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+          get_from_scope(l, Some(local_scope), Some(global_state.scope), Some(builtins))
             .unwrap_or_else(|e| panic!("CFunction '{}': {}", f.name, e)),
         other => other,
       };
