@@ -4,26 +4,26 @@ use eframe::egui;
 
 use egui_file::FileDialog;
 use std::{
-  ffi::OsStr,
-  path::{Path, PathBuf},
+    ffi::OsStr,
+    path::{Path, PathBuf},
 };
 
 use crate::compile;
-use sid::ProgramValue;
-use sid::TemplateValue;
+use sid::get_built_in_functions;
+use sid::interpret_one;
 use sid::DataValue;
 use sid::GlobalState;
-use sid::interpret_one;
-use sid::get_built_in_functions;
+use sid::ProgramValue;
+use sid::TemplateValue;
 use sid::ToSyntax;
 
 /// Interpreter state stored flat to avoid lifetime issues with ExeState<'a>.
 struct DebugState {
     program_stack: Vec<ProgramValue>,
-    data_stack:    Vec<TemplateValue>,
-    local_scope:   HashMap<String, DataValue>,
-    scope_stack:   Vec<HashMap<String, DataValue>>,
-    global_scope:  HashMap<String, DataValue>,
+    data_stack: Vec<TemplateValue>,
+    local_scope: HashMap<String, DataValue>,
+    scope_stack: Vec<HashMap<String, DataValue>>,
+    global_scope: HashMap<String, DataValue>,
 }
 
 pub struct SidDebuggerApp {
@@ -60,7 +60,8 @@ impl eframe::App for SidDebuggerApp {
                         let ext = Some(OsStr::new("sid"));
                         move |path: &Path| -> bool { path.extension() == ext }
                     });
-                    let mut dialog = FileDialog::open_file(self.opened_file.clone()).show_files_filter(filter);
+                    let mut dialog =
+                        FileDialog::open_file(self.opened_file.clone()).show_files_filter(filter);
                     dialog.open();
                     self.open_file_dialog = Some(dialog);
                 }
@@ -77,7 +78,7 @@ impl eframe::App for SidDebuggerApp {
                             &mut s.local_scope,
                             &mut s.scope_stack,
                             &mut global_state,
-                            &get_built_in_functions()
+                            &get_built_in_functions(),
                         );
                     }
                 }
@@ -87,16 +88,17 @@ impl eframe::App for SidDebuggerApp {
                 if dialog.show(ctx).selected() {
                     if let Some(file) = dialog.path() {
                         self.opened_file = Some(file.to_path_buf());
-                        let file_content = std::fs::read_to_string(self.opened_file.as_ref().unwrap())
-                            .expect("Failed to read file");
+                        let file_content =
+                            std::fs::read_to_string(self.opened_file.as_ref().unwrap())
+                                .expect("Failed to read file");
 
                         let program = compile(&file_content);
                         self.debug_state = Some(DebugState {
                             program_stack: vec![ProgramValue::Invoke],
-                            data_stack:    program.instructions,
-                            local_scope:   HashMap::new(),
-                            scope_stack:   Vec::new(),
-                            global_scope:  program.global_scope,
+                            data_stack: program.instructions,
+                            local_scope: HashMap::new(),
+                            scope_stack: Vec::new(),
+                            global_scope: program.global_scope,
                         });
                     }
                 }
@@ -109,12 +111,13 @@ impl eframe::App for SidDebuggerApp {
                 painter_size = egui::vec2(500.0, 500.0);
             }
 
-            let Some(s) = self.debug_state.as_ref() else { return; };
+            let Some(s) = self.debug_state.as_ref() else {
+                return;
+            };
 
-            // Display stuff 
+            // Display stuff
             ui.label(format!("File: {:?}", self.opened_file.as_ref().unwrap()));
             ui.horizontal(|ui| {
-                
                 ui.vertical(|ui| {
                     ui.label("program stack");
                     ui.label("-------------");
@@ -162,4 +165,3 @@ impl eframe::App for SidDebuggerApp {
         });
     }
 }
-

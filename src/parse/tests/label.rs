@@ -9,19 +9,18 @@ fn parse_label() {
             DataValue::Label("world".to_owned()).into(),
         ],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }
 
 #[test]
 fn parse_bool() {
     ParseTestFixture {
         input: "true false",
-        expected_output: vec![
-            DataValue::Bool(true).into(),
-            DataValue::Bool(false).into(),
-        ],
+        expected_output: vec![DataValue::Bool(true).into(), DataValue::Bool(false).into()],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }
 
 /// `@` must terminate a label so that `label@!` parses as `label` + `@!`
@@ -35,5 +34,6 @@ fn at_sign_terminates_label() {
             ProgramValue::ComptimeInvoke.into(),
         ],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }

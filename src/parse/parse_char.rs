@@ -1,6 +1,6 @@
 use super::Graphemes;
-use std::iter::Peekable;
 use anyhow::{bail, Result};
+use std::iter::Peekable;
 
 /// Parse a `'…'` character literal.  The iterator must be positioned at the
 /// opening `'`.  The contents must be exactly one unicode grapheme cluster.

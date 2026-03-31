@@ -9,5 +9,6 @@ fn parse_char() {
             DataValue::Char("👮‍♀️".to_owned()).into(),
         ],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }

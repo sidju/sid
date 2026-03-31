@@ -1,7 +1,7 @@
-use super::{Graphemes, is_key_char};
-use std::iter::Peekable;
-use anyhow::{bail, Result};
+use super::{is_key_char, Graphemes};
 use crate::DataValue;
+use anyhow::{bail, Result};
+use std::iter::Peekable;
 
 /// Parse a label or boolean literal.
 ///
@@ -21,8 +21,8 @@ pub fn parse_label(input: &mut Peekable<Graphemes>) -> Result<DataValue> {
         bail!("expected a label but found a key character or end of input");
     }
     Ok(match data.as_str() {
-        "true"  => DataValue::Bool(true),
+        "true" => DataValue::Bool(true),
         "false" => DataValue::Bool(false),
-        _       => DataValue::Label(data),
+        _ => DataValue::Label(data),
     })
 }

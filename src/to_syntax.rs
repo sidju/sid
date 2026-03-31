@@ -1,153 +1,193 @@
-
 use crate::types::*;
 use crate::SidType;
 
 pub trait ToSyntax
 where
-  Self: Sized {
+    Self: Sized,
+{
     fn to_syntax(&self) -> String;
 }
 
 fn list_to_syntax<T: ToSyntax>(list: &[T], left_bracket: &str, right_bracket: &str) -> String {
-  let mut s = left_bracket.to_owned();
-  for item in list.iter() {
-    s = format!("{}\n {} ", s, &item.to_syntax());
-  }
-  format!("{}\n{} ", s, right_bracket)
+    let mut s = left_bracket.to_owned();
+    for item in list.iter() {
+        s = format!("{}\n {} ", s, &item.to_syntax());
+    }
+    format!("{}\n{} ", s, right_bracket)
 }
 
 impl ToSyntax for DataValue {
-  fn to_syntax(&self) -> String {
-    match self {
-      DataValue::Bool(v) => v.to_string(),
-      DataValue::Str(v) => format!("\"{}\"", v.to_string_lossy()),
-      DataValue::Char(v) => format!("\'{}\'", v),
-      DataValue::Int(v) => v.to_string(),
-      DataValue::Float(v) => v.to_string(),
-      DataValue::Substack { body: v, .. } => list_to_syntax(v, "(", ")"),
-      DataValue::Script { body: v, .. } => list_to_syntax(v, "<", ">"),
-      DataValue::List(v) => list_to_syntax(v, "[", "]"),
-      DataValue::Set(v) => list_to_syntax(v, "{", "}"),
-      DataValue::Map(entries) => {
-        let inner = entries.iter()
-          .map(|(k, v)| format!("{}: {}", k.to_syntax(), v.to_syntax()))
-          .collect::<Vec<_>>().join(", ");
-        format!("{{{}}}", inner)
-      },
-      DataValue::BuiltIn(v) => v.clone(),
-      DataValue::Type(v) => v.to_syntax(),
-      DataValue::Label(v) => v.clone(),
-      DataValue::CFunction(f) => format!("<CFunction {}>", f.name),
-      DataValue::Pointer { addr: 0, pointee_ty: SidType::Any } =>
-        "types.null".to_owned(),
-      DataValue::Pointer { addr, pointee_ty } =>
-        format!("<Pointer 0x{:x} : {}>", addr, pointee_ty.to_syntax()),
-      DataValue::CFuncSig(sig) => format!("<CFuncSig {}>", sig.name),
-      DataValue::StackBlock => "# <StackBlock>\n".to_owned(),
+    fn to_syntax(&self) -> String {
+        match self {
+            DataValue::Bool(v) => v.to_string(),
+            DataValue::Str(v) => format!("\"{}\"", v.to_string_lossy()),
+            DataValue::Char(v) => format!("\'{}\'", v),
+            DataValue::Int(v) => v.to_string(),
+            DataValue::Float(v) => v.to_string(),
+            DataValue::Substack { body: v, .. } => list_to_syntax(v, "(", ")"),
+            DataValue::Script { body: v, .. } => list_to_syntax(v, "<", ">"),
+            DataValue::List(v) => list_to_syntax(v, "[", "]"),
+            DataValue::Set(v) => list_to_syntax(v, "{", "}"),
+            DataValue::Map(entries) => {
+                let inner = entries
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k.to_syntax(), v.to_syntax()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            DataValue::BuiltIn(v) => v.clone(),
+            DataValue::Type(v) => v.to_syntax(),
+            DataValue::Label(v) => v.clone(),
+            DataValue::CFunction(f) => format!("<CFunction {}>", f.name),
+            DataValue::Pointer {
+                addr: 0,
+                pointee_ty: SidType::Any,
+            } => "types.null".to_owned(),
+            DataValue::Pointer { addr, pointee_ty } => {
+                format!("<Pointer 0x{:x} : {}>", addr, pointee_ty.to_syntax())
+            }
+            DataValue::CFuncSig(sig) => format!("<CFuncSig {}>", sig.name),
+            DataValue::StackBlock => "# <StackBlock>\n".to_owned(),
+        }
     }
-  }
 }
 
 impl ToSyntax for ProgramValue {
-  fn to_syntax(&self) -> String {
-    match self {
-      ProgramValue::Data(v) => v.to_syntax(),
-      ProgramValue::Invoke => "!".to_owned(),
-      ProgramValue::ComptimeInvoke => "@!".to_owned(),
-      ProgramValue::Template(v) => v.data.to_syntax(),
-      ProgramValue::StackSizeAssert { expected_len, message } => {
-        format!("# stack size assert: {} == {} items\n", message, expected_len)
-      },
-      ProgramValue::CondLoop { cond, body, .. } => {
-        format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
-      },
-      ProgramValue::CondLoopStart { cond, body } => {
-        format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
-      },
-      ProgramValue::TypeCheck { types, context, block_placed } => {
-        let types_syntax: String = match types {
-          Some(ts) => ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" "),
-          None => "<none>".to_owned(),
-        };
-        format!("# type check ({}): [{}] block_placed={}\n", context, types_syntax, block_placed)
-      },
-      ProgramValue::PushScope { names } => {
-        if names.is_empty() {
-          "# push scope\n".to_owned()
-        } else {
-          format!("# push scope (bind: {})\n", names.join(", "))
+    fn to_syntax(&self) -> String {
+        match self {
+            ProgramValue::Data(v) => v.to_syntax(),
+            ProgramValue::Invoke => "!".to_owned(),
+            ProgramValue::ComptimeInvoke => "@!".to_owned(),
+            ProgramValue::Template(v) => v.data.to_syntax(),
+            ProgramValue::StackSizeAssert {
+                expected_len,
+                message,
+            } => {
+                format!(
+                    "# stack size assert: {} == {} items\n",
+                    message, expected_len
+                )
+            }
+            ProgramValue::CondLoop { cond, body, .. } => {
+                format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
+            }
+            ProgramValue::CondLoopStart { cond, body } => {
+                format!("({}) ({}) while_do !", body.to_syntax(), cond.to_syntax())
+            }
+            ProgramValue::TypeCheck {
+                types,
+                context,
+                block_placed,
+            } => {
+                let types_syntax: String = match types {
+                    Some(ts) => ts
+                        .iter()
+                        .map(|t| t.to_syntax())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    None => "<none>".to_owned(),
+                };
+                format!(
+                    "# type check ({}): [{}] block_placed={}\n",
+                    context, types_syntax, block_placed
+                )
+            }
+            ProgramValue::PushScope { names } => {
+                if names.is_empty() {
+                    "# push scope\n".to_owned()
+                } else {
+                    format!("# push scope (bind: {})\n", names.join(", "))
+                }
+            }
+            ProgramValue::PopScope => "# pop scope\n".to_owned(),
         }
-      },
-      ProgramValue::PopScope  => "# pop scope\n".to_owned(),
     }
-  }
 }
 
 impl ToSyntax for TemplateData {
-  fn to_syntax(&self) -> String {
-    match self {
-      TemplateData::Substack(v) => list_to_syntax(v, "(#Template", ")"),
-      TemplateData::List(v) => list_to_syntax(v, "[#Template", "]"),
-      TemplateData::Script(v) => list_to_syntax(v, "<#Template", ">"),
-      TemplateData::Set(v) => list_to_syntax(v, "{#Template", "}"),
-      TemplateData::Map(pairs) => {
-        let mut s = "{#Template".to_owned();
-        let n = pairs.len();
-        for (i, (k_tvs, v_tvs)) in pairs.into_iter().enumerate() {
-          let k_str = k_tvs.iter().map(|tv| tv.to_syntax()).collect::<Vec<_>>().join(" ");
-          let v_str = v_tvs.iter().map(|tv| tv.to_syntax()).collect::<Vec<_>>().join(" ");
-          let sep = if i + 1 < n { "," } else { "" };
-          s = format!("{}\n {}: {}{}", s, k_str, v_str, sep);
+    fn to_syntax(&self) -> String {
+        match self {
+            TemplateData::Substack(v) => list_to_syntax(v, "(#Template", ")"),
+            TemplateData::List(v) => list_to_syntax(v, "[#Template", "]"),
+            TemplateData::Script(v) => list_to_syntax(v, "<#Template", ">"),
+            TemplateData::Set(v) => list_to_syntax(v, "{#Template", "}"),
+            TemplateData::Map(pairs) => {
+                let mut s = "{#Template".to_owned();
+                let n = pairs.len();
+                for (i, (k_tvs, v_tvs)) in pairs.into_iter().enumerate() {
+                    let k_str = k_tvs
+                        .iter()
+                        .map(|tv| tv.to_syntax())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let v_str = v_tvs
+                        .iter()
+                        .map(|tv| tv.to_syntax())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let sep = if i + 1 < n { "," } else { "" };
+                    s = format!("{}\n {}: {}{}", s, k_str, v_str, sep);
+                }
+                format!("{}\n}}", s)
+            }
         }
-        format!("{}\n}}", s)
-      },
     }
-  }
 }
 
 impl ToSyntax for TemplateValue {
-  fn to_syntax(&self) -> String {
-      match self {
-        TemplateValue::ParentLabel(v) => format!("${}", v),
-        TemplateValue::ParentStackMove(v) => format!("${}", v),
-        TemplateValue::Literal(v) => v.to_syntax(),
-      }
-  }
+    fn to_syntax(&self) -> String {
+        match self {
+            TemplateValue::ParentLabel(v) => format!("${}", v),
+            TemplateValue::ParentStackMove(v) => format!("${}", v),
+            TemplateValue::Literal(v) => v.to_syntax(),
+        }
+    }
 }
 
 impl ToSyntax for SidType {
-  fn to_syntax(&self) -> String {
-    match self {
-      SidType::Bool  => "types.bool".to_owned(),
-      SidType::Int   => "types.int".to_owned(),
-      SidType::Float => "types.float".to_owned(),
-      SidType::Char  => "types.char".to_owned(),
-      SidType::Str   => "types.str".to_owned(),
-      SidType::Label => "types.label".to_owned(),
-      SidType::List(elem)             => format!("{} list !", elem.to_syntax()),
-      SidType::Map { key, value }     => format!("{} {} map @!", key.to_syntax(), value.to_syntax()),
-      SidType::Fn { args, ret } => {
-        let mut s = "fn".to_owned();
-        if let Some(ts) = args {
-          let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
-          s = format!("[{}] typed_args @! {}", inner, s);
+    fn to_syntax(&self) -> String {
+        match self {
+            SidType::Bool => "types.bool".to_owned(),
+            SidType::Int => "types.int".to_owned(),
+            SidType::Float => "types.float".to_owned(),
+            SidType::Char => "types.char".to_owned(),
+            SidType::Str => "types.str".to_owned(),
+            SidType::Label => "types.label".to_owned(),
+            SidType::List(elem) => format!("{} list !", elem.to_syntax()),
+            SidType::Map { key, value } => {
+                format!("{} {} map @!", key.to_syntax(), value.to_syntax())
+            }
+            SidType::Fn { args, ret } => {
+                let mut s = "fn".to_owned();
+                if let Some(ts) = args {
+                    let inner = ts
+                        .iter()
+                        .map(|t| t.to_syntax())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    s = format!("[{}] typed_args @! {}", inner, s);
+                }
+                if let Some(ts) = ret {
+                    let inner = ts
+                        .iter()
+                        .map(|t| t.to_syntax())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    s = format!("[{}] typed_rets @! {}", inner, s);
+                }
+                s
+            }
+            SidType::Pointer(pointee) => format!("{} ptr !", pointee.to_syntax()),
+            SidType::Require { base, constraint } => {
+                format!("{} {} require @!", base.to_syntax(), constraint.to_syntax())
+            }
+            SidType::Exclude { base, forbidden } => {
+                format!("{} {} exclude @!", base.to_syntax(), forbidden.to_syntax())
+            }
+            SidType::Any => "types.any".to_owned(),
+            SidType::Value => "types.value".to_owned(),
+            SidType::Literal(v) => v.to_syntax(),
         }
-        if let Some(ts) = ret {
-          let inner = ts.iter().map(|t| t.to_syntax()).collect::<Vec<_>>().join(" ");
-          s = format!("[{}] typed_rets @! {}", inner, s);
-        }
-        s
-      },
-      SidType::Pointer(pointee)       => format!("{} ptr !", pointee.to_syntax()),
-      SidType::Require { base, constraint } =>
-        format!("{} {} require @!", base.to_syntax(), constraint.to_syntax()),
-      SidType::Exclude { base, forbidden } =>
-        format!("{} {} exclude @!", base.to_syntax(), forbidden.to_syntax()),
-      SidType::Any                    => "types.any".to_owned(),
-      SidType::Value                  => "types.value".to_owned(),
-      SidType::Literal(v)             => v.to_syntax(),
     }
-  }
 }
-
-

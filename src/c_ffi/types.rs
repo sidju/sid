@@ -71,7 +71,7 @@ impl std::fmt::Debug for CFuncSig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CFuncSig")
             .field("name", &self.name)
-            .field("ret",  &self.ret)
+            .field("ret", &self.ret)
             .field("params", &self.params)
             .field("param_names", &self.param_names)
             .field("variadic", &self.variadic)
@@ -82,12 +82,12 @@ impl std::fmt::Debug for CFuncSig {
 impl Clone for CFuncSig {
     fn clone(&self) -> Self {
         CFuncSig {
-            name:        self.name.clone(),
-            ret:         self.ret.clone(),
-            params:      self.params.clone(),
+            name: self.name.clone(),
+            ret: self.ret.clone(),
+            params: self.params.clone(),
             param_names: self.param_names.clone(),
-            variadic:    self.variadic,
-            lib_name:    self.lib_name.clone(),
+            variadic: self.variadic,
+            lib_name: self.lib_name.clone(),
         }
     }
 }
@@ -121,7 +121,9 @@ impl std::fmt::Debug for FnPtr {
     }
 }
 impl PartialEq for FnPtr {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
 }
 
 /// A dynamically-loaded C function that can be called via libffi.
@@ -140,7 +142,9 @@ impl std::fmt::Debug for CFunc {
 }
 impl PartialEq for CFunc {
     /// Two [`CFunc`]s are equal iff they point to the same function.
-    fn eq(&self, other: &Self) -> bool { self.fn_ptr == other.fn_ptr }
+    fn eq(&self, other: &Self) -> bool {
+        self.fn_ptr == other.fn_ptr
+    }
 }
 impl Clone for CFunc {
     fn clone(&self) -> Self {

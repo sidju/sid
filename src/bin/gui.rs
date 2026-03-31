@@ -4,10 +4,9 @@ use sid::*;
 
 mod debug_gui;
 
-
 struct Program {
-  instructions: Vec<DataValue>,
-  global_scope: HashMap<String, DataValue>,
+    instructions: Vec<DataValue>,
+    global_scope: HashMap<String, DataValue>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -47,47 +46,46 @@ fn main() {
 }
 
 fn run_file(path: &str) {
-  // Create a String from the file
-  let file_content = std::fs::read_to_string(path)
-    .expect("Failed to read file");
-  run(&file_content);
+    // Create a String from the file
+    let file_content = std::fs::read_to_string(path).expect("Failed to read file");
+    run(&file_content);
 }
 
-fn compile(source: & str) -> Program {
-  // Parse that String into Vec<TemplateValue>
-  let parsed = parse_str(source).expect("parse error");
-  // Create the global scope, with built-in functions and constants
-  // (Implementations of this don't yet exist)
-  let mut global_scope = HashMap::new();
-  let builtins = get_interpret_builtins();
-  // Render that Vec<TemplateValue> as a Substack
-  let rendered = {
-    let mut gs = GlobalState::new(&mut global_scope);
-    render_template(
-      Template::substack(parsed),
-      &mut Vec::new(),
-      &HashMap::new(),
-      &mut gs,
-      &builtins,
-    )
-  };
-  return Program{
-    instructions: rendered,
-    global_scope,
-  };
+fn compile(source: &str) -> Program {
+    // Parse that String into Vec<TemplateValue>
+    let parsed = parse_str(source).expect("parse error");
+    // Create the global scope, with built-in functions and constants
+    // (Implementations of this don't yet exist)
+    let mut global_scope = HashMap::new();
+    let builtins = get_interpret_builtins();
+    // Render that Vec<TemplateValue> as a Substack
+    let rendered = {
+        let mut gs = GlobalState::new(&mut global_scope);
+        render_template(
+            Template::substack(parsed),
+            &mut Vec::new(),
+            &HashMap::new(),
+            &mut gs,
+            &builtins,
+        )
+    };
+    return Program {
+        instructions: rendered,
+        global_scope,
+    };
 }
 
 fn run(source: &str) {
-  let program = compile(source);
-  // The rendering output is the whole data stack initially
-  // And an invoke the whole program
-  let program_stack = vec![ProgramValue::Invoke];
-  let data_stack = program.instructions;
-  let built_in_functions = get_built_in_functions();
-  interpret(
-    program_stack,
-    data_stack,
-    program.global_scope,
-    &built_in_functions,
-  );
+    let program = compile(source);
+    // The rendering output is the whole data stack initially
+    // And an invoke the whole program
+    let program_stack = vec![ProgramValue::Invoke];
+    let data_stack = program.instructions;
+    let built_in_functions = get_built_in_functions();
+    interpret(
+        program_stack,
+        data_stack,
+        program.global_scope,
+        &built_in_functions,
+    );
 }

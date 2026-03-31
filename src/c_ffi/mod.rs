@@ -8,10 +8,10 @@
 //! - [`call_c_function`] — call a [`CFunc`] from a [`DataValue`] argument
 //! - [`call_cfuncsig`]   — call a [`CFuncSig`] via the pre-loaded library registry
 
-mod types;
-mod parse;
 mod call;
+mod parse;
+mod types;
 
-pub use types::{CType, CFuncSig, CFunc};
-pub use parse::parse_c_header;
 pub use call::{call_c_function, call_cfuncsig, open_library};
+pub use parse::parse_c_header;
+pub use types::{CFunc, CFuncSig, CType};

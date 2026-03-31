@@ -1,9 +1,7 @@
 use anyhow::Context;
 use inkwell::{
     module::Module,
-    targets::{
-        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
-    },
+    targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine},
     OptimizationLevel,
 };
 
@@ -47,7 +45,9 @@ pub fn emit_object_file(module: &Module, out_path: &str) -> anyhow::Result<()> {
     let triple = TargetMachine::get_default_triple();
     let cpu_cstr = TargetMachine::get_host_cpu_name();
     let features_cstr = TargetMachine::get_host_cpu_features();
-    let cpu = cpu_cstr.to_str().context("host CPU name is not valid UTF-8")?;
+    let cpu = cpu_cstr
+        .to_str()
+        .context("host CPU name is not valid UTF-8")?;
     let features = features_cstr
         .to_str()
         .context("host CPU features string is not valid UTF-8")?;

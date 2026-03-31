@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::types::{CType, CFuncSig};
+use super::types::{CFuncSig, CType};
 use crate::type_system::SidType;
 
 /// Parse a C header file and return all bridgeable function signatures.
@@ -33,13 +33,16 @@ pub fn parse_c_header(path: &str, lib_name: &str) -> Result<Vec<CFuncSig>> {
 /// Walk a fully preprocessed translation unit and return bridgeable function
 /// signatures.
 fn extract_function_sigs(unit: &lang_c::ast::TranslationUnit, lib_name: &str) -> Vec<CFuncSig> {
-    unit.0.iter().filter_map(|ext| {
-        if let lang_c::ast::ExternalDeclaration::Declaration(decl) = &ext.node {
-            try_extract_func_sig(&decl.node, lib_name)
-        } else {
-            None
-        }
-    }).collect()
+    unit.0
+        .iter()
+        .filter_map(|ext| {
+            if let lang_c::ast::ExternalDeclaration::Declaration(decl) = &ext.node {
+                try_extract_func_sig(&decl.node, lib_name)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Attempt to extract a bridgeable function signature from a top-level
@@ -62,9 +65,10 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Opti
     // derived = [Function]. For a function returning a pointer `T *f(params)`,
     // lang_c puts derived = [Pointer, Function] — the Pointer comes first
     // because it is the "outer" modifier in the C grammar.
-    let func_idx = declarator.derived.iter().position(|d| {
-        matches!(d.node, DerivedDeclarator::Function(_))
-    })?;
+    let func_idx = declarator
+        .derived
+        .iter()
+        .position(|d| matches!(d.node, DerivedDeclarator::Function(_)))?;
     let func_decl = match &declarator.derived[func_idx].node {
         DerivedDeclarator::Function(f) => &f.node,
         _ => unreachable!(),
@@ -77,9 +81,9 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Opti
 
     // Any Pointer derived declarators that appear before the Function entry
     // (i.e. at indices < func_idx) indicate a pointer return type.
-    let has_return_ptr = declarator.derived[..func_idx].iter().any(|d| {
-        matches!(&d.node, DerivedDeclarator::Pointer(_))
-    });
+    let has_return_ptr = declarator.derived[..func_idx]
+        .iter()
+        .any(|d| matches!(&d.node, DerivedDeclarator::Pointer(_)));
 
     let ret = specifiers_to_ctype(&decl.specifiers, has_return_ptr)?;
     let (param_names, params) = extract_params(&func_decl.parameters)?;
@@ -88,7 +92,14 @@ fn try_extract_func_sig(decl: &lang_c::ast::Declaration, lib_name: &str) -> Opti
         param_names.push("...".to_owned());
     }
 
-    Some(CFuncSig { name, ret, params, param_names, variadic, lib_name: lib_name.to_owned() })
+    Some(CFuncSig {
+        name,
+        ret,
+        params,
+        param_names,
+        variadic,
+        lib_name: lib_name.to_owned(),
+    })
 }
 
 /// Extract the parameter names and types from a function's parameter list.
@@ -127,23 +138,32 @@ fn extract_params(
         let param = &param_node.node;
 
         // Is there a pointer in the parameter's declarator?
-        let has_ptr = param.declarator.as_ref().map(|d| {
-            d.node.derived.iter().any(|der| {
-                matches!(&der.node, DerivedDeclarator::Pointer(_))
+        let has_ptr = param
+            .declarator
+            .as_ref()
+            .map(|d| {
+                d.node
+                    .derived
+                    .iter()
+                    .any(|der| matches!(&der.node, DerivedDeclarator::Pointer(_)))
             })
-        }).unwrap_or(false);
+            .unwrap_or(false);
 
         let ctype = specifiers_to_ctype(&param.specifiers, has_ptr)?;
         if ctype != CType::Void {
             // Extract the parameter name from the declarator identifier, or
             // synthesise one for anonymous parameters.
-            let pname = param.declarator.as_ref().and_then(|d| {
-                if let DeclaratorKind::Identifier(id) = &d.node.kind.node {
-                    Some(id.node.name.clone())
-                } else {
-                    None
-                }
-            }).unwrap_or_else(|| format!("p{}", idx));
+            let pname = param
+                .declarator
+                .as_ref()
+                .and_then(|d| {
+                    if let DeclaratorKind::Identifier(id) = &d.node.kind.node {
+                        Some(id.node.name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| format!("p{}", idx));
             names.push(pname);
             types.push(ctype);
         }
@@ -161,25 +181,37 @@ fn specifiers_to_ctype(
     use lang_c::ast::{DeclarationSpecifier, TypeSpecifier};
 
     // Collect just the TypeSpecifier variants; ignore qualifiers, storage class, etc.
-    let type_specs: Vec<&TypeSpecifier> = specs.iter().filter_map(|s| {
-        if let DeclarationSpecifier::TypeSpecifier(ts) = &s.node {
-            Some(&ts.node)
-        } else {
-            None
-        }
-    }).collect();
+    let type_specs: Vec<&TypeSpecifier> = specs
+        .iter()
+        .filter_map(|s| {
+            if let DeclarationSpecifier::TypeSpecifier(ts) = &s.node {
+                Some(&ts.node)
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    let has_char   = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Char));
-    let has_void   = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Void));
-    let has_float  = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Float));
-    let has_double = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Double));
-    let has_short  = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Short));
-    let has_int    = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Int));
-    let long_count = type_specs.iter().filter(|s| matches!(s, TypeSpecifier::Long)).count();
+    let has_char = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Char));
+    let has_void = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Void));
+    let has_float = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Float));
+    let has_double = type_specs
+        .iter()
+        .any(|s| matches!(s, TypeSpecifier::Double));
+    let has_short = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Short));
+    let has_int = type_specs.iter().any(|s| matches!(s, TypeSpecifier::Int));
+    let long_count = type_specs
+        .iter()
+        .filter(|s| matches!(s, TypeSpecifier::Long))
+        .count();
 
     // `char *` → CString; bare `char` → Int.
     if has_char {
-        return if has_ptr { Some(CType::CString) } else { Some(CType::Int) };
+        return if has_ptr {
+            Some(CType::CString)
+        } else {
+            Some(CType::Int)
+        };
     }
 
     // Any other pointer — determine the pointee SidType for display.
@@ -200,23 +232,35 @@ fn specifiers_to_ctype(
     }
 
     // Non-pointer primitive types.
-    if has_void   { return Some(CType::Void); }
-    if has_double { return Some(CType::Double); }
-    if has_float  { return Some(CType::Float); }
-    if long_count >= 2                     { return Some(CType::Long); } // long long
-    if long_count == 1 && !has_int         { return Some(CType::Long); } // bare long
-    if has_int || has_short || long_count > 0 { return Some(CType::Int); }
+    if has_void {
+        return Some(CType::Void);
+    }
+    if has_double {
+        return Some(CType::Double);
+    }
+    if has_float {
+        return Some(CType::Float);
+    }
+    if long_count >= 2 {
+        return Some(CType::Long);
+    } // long long
+    if long_count == 1 && !has_int {
+        return Some(CType::Long);
+    } // bare long
+    if has_int || has_short || long_count > 0 {
+        return Some(CType::Int);
+    }
 
     // Typedef names: size_t, int32_t, etc.
     if let Some(name) = typedef_name(&type_specs) {
         return match name {
             "size_t" => Some(CType::SizeT),
-            "ssize_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t"
-            | "intptr_t" | "uintptr_t" => Some(CType::Long),
-            "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
-            | "int8_t"  | "int16_t"  | "int32_t"  | "int64_t"
-            | "off_t" | "pid_t" | "uid_t" | "gid_t" | "mode_t"
-            | "dev_t" | "ino_t" | "nlink_t" | "socklen_t" => Some(CType::Int),
+            "ssize_t" | "ptrdiff_t" | "intmax_t" | "uintmax_t" | "intptr_t" | "uintptr_t" => {
+                Some(CType::Long)
+            }
+            "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t" | "int8_t" | "int16_t" | "int32_t"
+            | "int64_t" | "off_t" | "pid_t" | "uid_t" | "gid_t" | "mode_t" | "dev_t" | "ino_t"
+            | "nlink_t" | "socklen_t" => Some(CType::Int),
             _ => None,
         };
     }
@@ -238,12 +282,9 @@ fn typedef_name<'a>(specs: &[&'a lang_c::ast::TypeSpecifier]) -> Option<&'a str>
 /// Map a known C typedef name to its SID pointee type.
 fn sid_type_for_typedef(name: &str) -> Option<SidType> {
     match name {
-        "size_t" | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
-        | "int8_t" | "int16_t" | "int32_t" | "int64_t"
-        | "ssize_t" | "ptrdiff_t" | "intptr_t" | "uintptr_t"
-        | "off_t" | "pid_t" | "uid_t" | "gid_t" => Some(SidType::Int),
+        "size_t" | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t" | "int8_t" | "int16_t"
+        | "int32_t" | "int64_t" | "ssize_t" | "ptrdiff_t" | "intptr_t" | "uintptr_t" | "off_t"
+        | "pid_t" | "uid_t" | "gid_t" => Some(SidType::Int),
         _ => None,
     }
 }
-
-

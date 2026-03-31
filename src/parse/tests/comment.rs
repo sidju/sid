@@ -9,5 +9,6 @@ fn parse_comments() {
             DataValue::Str(std::ffi::CString::new("there").unwrap()).into(),
         ],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }

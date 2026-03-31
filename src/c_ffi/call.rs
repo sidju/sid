@@ -1,14 +1,14 @@
 //! Dynamic library loading and C function invocation via libffi.
 
-use std::ffi::{CString, c_char};
+use std::ffi::{c_char, CString};
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use libloading::Library;
 
-use crate::DataValue;
-use crate::type_system::SidType;
 use super::types::{CFunc, CFuncSig, CType};
+use crate::type_system::SidType;
+use crate::DataValue;
 
 // ── Dynamic library loading ───────────────────────────────────────────────────
 
@@ -53,11 +53,13 @@ pub fn call_cfuncsig(
     arg: Option<DataValue>,
     libraries: &std::collections::HashMap<String, Arc<Library>>,
 ) -> Result<Option<DataValue>> {
-    let lib = libraries.get(sig.lib_name.as_str())
-        .ok_or_else(|| anyhow::anyhow!(
+    let lib = libraries.get(sig.lib_name.as_str()).ok_or_else(|| {
+        anyhow::anyhow!(
             "'{}': library '{}' is not loaded — call c_link_lib first",
-            sig.name, sig.lib_name
-        ))?;
+            sig.name,
+            sig.lib_name
+        )
+    })?;
 
     let sym_name = CString::new(sig.name.as_str()).unwrap();
     // SAFETY: we read the raw function pointer; it is not called until
@@ -65,7 +67,12 @@ pub fn call_cfuncsig(
     let fn_ptr: *const () = unsafe {
         match lib.get::<unsafe extern "C" fn()>(sym_name.as_bytes_with_nul()) {
             Ok(sym) => *sym as *const (),
-            Err(e) => bail!("'{}': symbol not found in '{}': {}", sig.name, sig.lib_name, e),
+            Err(e) => bail!(
+                "'{}': symbol not found in '{}': {}",
+                sig.name,
+                sig.lib_name,
+                e
+            ),
         }
     };
     call_fn_ptr(fn_ptr, sig, arg)
@@ -79,13 +86,11 @@ pub fn call_cfuncsig(
 /// - strings / pointers → pointer
 fn ctype_for_variadic(val: &DataValue) -> Result<CType> {
     match val {
-        DataValue::Int(_)          => Ok(CType::Long),
-        DataValue::Float(_)        => Ok(CType::Double),
-        DataValue::Str(_)          => Ok(CType::CString),
-        DataValue::Pointer { .. }  => Ok(CType::Pointer(SidType::Any)),
-        other => bail!(
-            "cannot infer C type for variadic argument: {:?}", other
-        ),
+        DataValue::Int(_) => Ok(CType::Long),
+        DataValue::Float(_) => Ok(CType::Double),
+        DataValue::Str(_) => Ok(CType::CString),
+        DataValue::Pointer { .. } => Ok(CType::Pointer(SidType::Any)),
+        other => bail!("cannot infer C type for variadic argument: {:?}", other),
     }
 }
 
@@ -107,21 +112,18 @@ fn call_fn_ptr(
             Some(DataValue::List(items)) if items.len() >= params.len() => items,
             Some(DataValue::List(items)) => bail!(
                 "'{}': variadic call needs at least {} argument(s), got {}",
-                sig.name, params.len(), items.len()
+                sig.name,
+                params.len(),
+                items.len()
             ),
-            _ => bail!(
-                "'{}': variadic call expects a List of arguments", sig.name
-            ),
+            _ => bail!("'{}': variadic call expects a List of arguments", sig.name),
         }
     } else {
         match (params.len(), arg) {
             (0, _) => vec![],
             (1, Some(v)) => vec![v],
             (n, Some(DataValue::List(items))) if items.len() == n => items,
-            (n, _) => bail!(
-                "'{}': expected {} argument(s)",
-                sig.name, n
-            ),
+            (n, _) => bail!("'{}': expected {} argument(s)", sig.name, n),
         }
     };
 
@@ -179,7 +181,9 @@ fn call_fn_ptr(
             }
             _ => bail!(
                 "'{}': argument type mismatch (value {:?} vs expected C type {:?})",
-                sig.name, val, ctype
+                sig.name,
+                val,
+                ctype
             ),
         };
         stored.push(s);

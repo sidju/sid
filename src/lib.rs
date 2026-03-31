@@ -3,13 +3,13 @@
 pub mod type_system;
 pub use type_system::SidType;
 pub mod c_ffi;
-pub use c_ffi::{CFunc, CFuncSig, CType, parse_c_header, call_c_function, call_cfuncsig};
 /// Expose `open_library` for tests and integration code that needs to
 /// pre-populate the library registry (e.g. after `c_link_lib` changes).
 pub use c_ffi::open_library as c_ffi_open_library;
+pub use c_ffi::{call_c_function, call_cfuncsig, parse_c_header, CFunc, CFuncSig, CType};
 mod types;
-pub use types::*;
 pub use types::GlobalState;
+pub use types::*;
 mod to_syntax;
 pub use to_syntax::*;
 mod parse;
@@ -56,7 +56,7 @@ pub mod llvm_backend;
 //        TV::ParentLabel(l) => { rendered.push(resolve_label(&l).into()); },
 //        TV::ParentStackMove(i) => {
 //          let value = consumed_stack[i].take().expect("Stack value taken twice in template");
-//          rendered.push(value.into()); 
+//          rendered.push(value.into());
 //        },
 //      }}
 //      RealValue::Substack(rendered)

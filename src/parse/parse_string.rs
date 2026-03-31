@@ -1,7 +1,7 @@
 use super::Graphemes;
+use anyhow::{bail, Result};
 use std::ffi::CString;
 use std::iter::Peekable;
-use anyhow::{bail, Result};
 
 /// Parse a `"…"` string literal.  The iterator must be positioned at the
 /// opening `"`.

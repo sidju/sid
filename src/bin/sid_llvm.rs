@@ -1,5 +1,5 @@
 use clap::Parser;
-use sid::{parse_str, llvm_backend};
+use sid::{llvm_backend, parse_str};
 
 #[derive(Parser)]
 struct Args {
@@ -21,7 +21,11 @@ fn main() -> anyhow::Result<()> {
     if let Some(path) = &args.source {
         let source = std::fs::read_to_string(path)?;
         let (program, consumed) = parse_str(&source)?;
-        println!("Parsed {} program value(s), consumes {} parent-stack entries.", program.len(), consumed);
+        println!(
+            "Parsed {} program value(s), consumes {} parent-stack entries.",
+            program.len(),
+            consumed
+        );
         for (i, v) in program.iter().enumerate() {
             println!("  [{i}] {v:?}");
         }

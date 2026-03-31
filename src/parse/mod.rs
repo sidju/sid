@@ -1,19 +1,19 @@
-use unicode_segmentation::{Graphemes, UnicodeSegmentation};
-use std::iter::Peekable;
 use anyhow::{bail, Result};
+use std::iter::Peekable;
+use unicode_segmentation::{Graphemes, UnicodeSegmentation};
 
 use crate::*;
 
-mod parse_string;
 mod parse_char;
 mod parse_label;
 mod parse_number;
+mod parse_string;
 mod parse_template;
 
-use parse_string::parse_string;
 use parse_char::parse_char;
 pub use parse_label::parse_label;
 use parse_number::parse_number;
+use parse_string::parse_string;
 use parse_template::{parse_parent_access, parse_template};
 
 /// Parse a complete source string into a flat sequence of [`TemplateValue`]s
@@ -21,10 +21,7 @@ use parse_template::{parse_parent_access, parse_template};
 ///
 /// This is the main entry point for the parser.
 pub fn parse_str(source: &str) -> Result<(Vec<TemplateValue>, usize)> {
-    parse_program_sequence(
-        &mut source.graphemes(true).peekable(),
-        None,
-    )
+    parse_program_sequence(&mut source.graphemes(true).peekable(), None)
 }
 
 /// Parse a sequence of [`TemplateValue`]s until `terminator` is consumed or
@@ -40,7 +37,10 @@ pub fn parse_program_sequence(
         // Without this, `( ... ) ` would fail because `parse_template_value` sees
         // whitespace, skips it, then bails on the `)` before the parent loop can
         // match it as the terminator.
-        while matches!(iter.peek().map(|x| *x), Some(" ") | Some("\n") | Some("\t") | Some(",")) {
+        while matches!(
+            iter.peek().map(|x| *x),
+            Some(" ") | Some("\n") | Some("\t") | Some(",")
+        ) {
             iter.next();
         }
         // Check for the terminator; consume it and stop.
@@ -53,7 +53,10 @@ pub fn parse_program_sequence(
                 if terminator.is_none() {
                     return Ok((out, max_consumed));
                 }
-                bail!("unexpected end of input while looking for '{}'", terminator.unwrap());
+                bail!(
+                    "unexpected end of input while looking for '{}'",
+                    terminator.unwrap()
+                );
             }
             Some(TemplateValue::ParentStackMove(i)) => {
                 max_consumed = max_consumed.max(i);
@@ -83,9 +86,11 @@ pub(super) fn parse_template_value(
                 bail!("unexpected closing delimiter '{}'", ch)
             }
             // Comment: skip to end of line.
-            "#" => { while iter.next().unwrap_or("\n") != "\n" {} }
+            "#" => while iter.next().unwrap_or("\n") != "\n" {},
             // Insignificant whitespace and comma separators.
-            " " | "\n" | "\t" | "," => { iter.next(); }
+            " " | "\n" | "\t" | "," => {
+                iter.next();
+            }
             // String literal.
             "\"" => return Ok(Some(DataValue::Str(parse_string(iter)?).into())),
             // Char literal.
@@ -93,18 +98,29 @@ pub(super) fn parse_template_value(
             // Template literals: substack, list, set/struct, script.
             "(" | "[" | "{" | "<" => return Ok(Some(parse_template(iter)?.into())),
             // Invoke / comptime-invoke.
-            "!" => { iter.next(); return Ok(Some(ProgramValue::Invoke.into())); }
+            "!" => {
+                iter.next();
+                return Ok(Some(ProgramValue::Invoke.into()));
+            }
             "@" => {
                 iter.next();
                 match iter.peek().map(|x| *x) {
-                    Some("!") => { iter.next(); return Ok(Some(ProgramValue::ComptimeInvoke.into())); }
+                    Some("!") => {
+                        iter.next();
+                        return Ok(Some(ProgramValue::ComptimeInvoke.into()));
+                    }
                     other => bail!("expected '!' after '@', got {:?}", other),
                 }
             }
             // Stack / scope substitution inside a template.
             "$" => return Ok(Some(parse_parent_access(iter)?)),
             // Number (digit or leading minus).
-            x if x.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) => {
+            x if x
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit() || c == '-')
+                .unwrap_or(false) =>
+            {
                 return Ok(Some(parse_number(iter)?.into()));
             }
             // Anything else is a label or boolean.
@@ -115,7 +131,10 @@ pub(super) fn parse_template_value(
 
 /// Characters that delimit tokens (not valid inside a bare label or number).
 pub(super) fn is_key_char(ch: &str) -> bool {
-    matches!(ch, " " | "\n" | "\t" | "," | "!" | "#" | ":" | ")" | "]" | "}" | ">" | "@")
+    matches!(
+        ch,
+        " " | "\n" | "\t" | "," | "!" | "#" | ":" | ")" | "]" | "}" | ">" | "@"
+    )
 }
 
 #[cfg(test)]

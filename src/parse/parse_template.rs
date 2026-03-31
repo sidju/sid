@@ -1,17 +1,23 @@
-use super::{Graphemes, parse_program_sequence, parse_template_value};
-use std::iter::Peekable;
-use anyhow::{bail, Result};
+use super::{parse_program_sequence, parse_template_value, Graphemes};
 use crate::{Template, TemplateValue};
+use anyhow::{bail, Result};
+use std::iter::Peekable;
 
 /// Parse a `$n` (parent stack move) or `$name` (parent label) access.
 ///
 /// The iterator must be positioned at the `$`.
 pub fn parse_parent_access(input: &mut Peekable<Graphemes>) -> Result<TemplateValue> {
-    assert_eq!(input.next(), Some("$"), "parse_parent_access: iterator must start at '$'");
+    assert_eq!(
+        input.next(),
+        Some("$"),
+        "parse_parent_access: iterator must start at '$'"
+    );
     let mut numeric = true;
     let mut agg = String::new();
     while let Some(&ch) = input.peek() {
-        if super::is_key_char(ch) { break; }
+        if super::is_key_char(ch) {
+            break;
+        }
         if ch.len() != 1 || !ch.chars().next().unwrap().is_ascii_digit() {
             numeric = false;
         }
@@ -28,7 +34,6 @@ pub fn parse_parent_access(input: &mut Peekable<Graphemes>) -> Result<TemplateVa
     })
 }
 
-
 ///
 /// For `{…}` the content is scanned at the first parsing level to decide
 /// whether it is a set or a struct (struct has at least one `:` at depth 0).
@@ -36,7 +41,10 @@ pub fn parse_parent_access(input: &mut Peekable<Graphemes>) -> Result<TemplateVa
 /// The iterator must be positioned at the opening delimiter.
 pub fn parse_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
     match input.next().as_deref() {
-        Some("(") => Ok(Template::substack(parse_program_sequence(input, Some(")"))?)),
+        Some("(") => Ok(Template::substack(parse_program_sequence(
+            input,
+            Some(")"),
+        )?)),
         Some("[") => Ok(Template::list(parse_program_sequence(input, Some("]"))?)),
         Some("<") => Ok(Template::script(parse_program_sequence(input, Some(">"))?)),
         Some("{") => parse_brace_template(input),
@@ -55,20 +63,32 @@ fn parse_brace_template(input: &mut Peekable<Graphemes>) -> Result<Template> {
         match input.next().as_deref() {
             None => bail!("unterminated '{{' — reached end of input"),
             Some("}") if depth == 0 => break,
-            Some(ch @ ("(" | "[" | "{" | "<")) => { depth += 1; buf.push(ch.to_owned()); }
-            Some(ch @ (")" | "]" | "}" | ">")) => { depth -= 1; buf.push(ch.to_owned()); }
-            Some(":") if depth == 0 => { has_colon = true; buf.push(":".to_owned()); }
+            Some(ch @ ("(" | "[" | "{" | "<")) => {
+                depth += 1;
+                buf.push(ch.to_owned());
+            }
+            Some(ch @ (")" | "]" | "}" | ">")) => {
+                depth -= 1;
+                buf.push(ch.to_owned());
+            }
+            Some(":") if depth == 0 => {
+                has_colon = true;
+                buf.push(":".to_owned());
+            }
             Some(ch) => buf.push(ch.to_owned()),
         }
     }
     let raw: String = buf.join("");
     if has_colon {
         // {:} is the empty-map literal — a lone `:` with no entries.
-        if raw.trim() == ":" { return Ok(Template::map(vec![], 0)); }
+        if raw.trim() == ":" {
+            return Ok(Template::map(vec![], 0));
+        }
         parse_map(&raw)
     } else {
         Ok(Template::set(parse_program_sequence(
-            &mut unicode_segmentation::UnicodeSegmentation::graphemes(raw.as_str(), true).peekable(),
+            &mut unicode_segmentation::UnicodeSegmentation::graphemes(raw.as_str(), true)
+                .peekable(),
             None,
         )?))
     }
@@ -85,17 +105,19 @@ fn parse_map(raw: &str) -> Result<Template> {
 
     let track_seq = |tvs: &[TemplateValue], max: &mut usize| {
         for tv in tvs {
-            if let TemplateValue::ParentStackMove(i) = tv { *max = (*max).max(*i); }
+            if let TemplateValue::ParentStackMove(i) = tv {
+                *max = (*max).max(*i);
+            }
         }
     };
 
     // Skip leading whitespace
-    let skip_ws = |iter: &mut std::iter::Peekable<_>| {
-        loop {
-            match iter.peek() {
-                Some(&" ") | Some(&"\n") | Some(&"\t") => { iter.next(); }
-                _ => break,
+    let skip_ws = |iter: &mut std::iter::Peekable<_>| loop {
+        match iter.peek() {
+            Some(&" ") | Some(&"\n") | Some(&"\t") => {
+                iter.next();
             }
+            _ => break,
         }
     };
 
@@ -103,7 +125,9 @@ fn parse_map(raw: &str) -> Result<Template> {
         skip_ws(&mut iter);
 
         // Check for end of input
-        if iter.peek().is_none() { break; }
+        if iter.peek().is_none() {
+            break;
+        }
 
         // Parse key tokens until `:` at depth 0
         let mut key_tvs: Vec<TemplateValue> = Vec::new();
@@ -111,13 +135,14 @@ fn parse_map(raw: &str) -> Result<Template> {
             skip_ws(&mut iter);
             match iter.peek().map(|s| *s) {
                 None => bail!("unexpected end of input while parsing map key"),
-                Some(":") => { iter.next(); break; }
-                _ => {
-                    match parse_template_value(&mut iter)? {
-                        Some(v) => key_tvs.push(v),
-                        None => bail!("unexpected end of input while parsing map key"),
-                    }
+                Some(":") => {
+                    iter.next();
+                    break;
                 }
+                _ => match parse_template_value(&mut iter)? {
+                    Some(v) => key_tvs.push(v),
+                    None => bail!("unexpected end of input while parsing map key"),
+                },
             }
         }
         if key_tvs.is_empty() {
@@ -131,12 +156,10 @@ fn parse_map(raw: &str) -> Result<Template> {
             skip_ws(&mut iter);
             match iter.peek().map(|s| *s) {
                 None | Some(",") => break,
-                _ => {
-                    match parse_template_value(&mut iter)? {
-                        Some(v) => val_tvs.push(v),
-                        None => break,
-                    }
-                }
+                _ => match parse_template_value(&mut iter)? {
+                    Some(v) => val_tvs.push(v),
+                    None => break,
+                },
             }
         }
         if val_tvs.is_empty() {
@@ -150,7 +173,9 @@ fn parse_map(raw: &str) -> Result<Template> {
         skip_ws(&mut iter);
         match iter.peek().map(|s| *s) {
             None => break,
-            Some(",") => { iter.next(); }
+            Some(",") => {
+                iter.next();
+            }
             Some(other) => bail!("expected ',' or end of map, got {:?}", other),
         }
     }

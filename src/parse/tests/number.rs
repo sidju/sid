@@ -4,12 +4,10 @@ use super::*;
 fn parse_integer() {
     ParseTestFixture {
         input: "-10 500000",
-        expected_output: vec![
-            DataValue::Int(-10).into(),
-            DataValue::Int(500000).into(),
-        ],
+        expected_output: vec![DataValue::Int(-10).into(), DataValue::Int(500000).into()],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }
 
 #[test]
@@ -21,5 +19,6 @@ fn parse_float() {
             DataValue::Float(0.66).into(),
         ],
         expected_consumed: 0,
-    }.test();
+    }
+    .test();
 }
