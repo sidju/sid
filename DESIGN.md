@@ -226,6 +226,40 @@ and a plain value when all of its elements are plain values.
 Parametric type constructors (`list`, `set`, `map`) follow RPN order: push the
 type argument(s) first, then call the constructor with `@!`.
 
+### Type combinators
+
+Two comptime constructors combine existing types into composite type constraints.
+Both take two arguments from the stack and return a single type.
+
+#### `require @!`
+
+`base  constraint  require @!` — value must match **both** `base` and `constraint`.
+
+```
+types.any   types.int   require @!   # any AND int → equivalent to int
+types.str   Nonempty    require @!   # str that also satisfies Nonempty (alias)
+```
+
+#### `exclude @!`
+
+`base  forbidden  exclude @!` — value must match `base` and must **not** match
+`forbidden`. The `forbidden` argument may be a type or a plain value (plain values
+are treated as exact-equality patterns).
+
+```
+types.any   types.null  exclude @!   # anything except null
+types.int   0           exclude @!   # any int except zero
+types.str   ""          exclude @!   # any str except the empty string
+```
+
+A common idiom for non-null arguments:
+
+```
+NonNullStr   types.str  types.null  exclude @!   def!
+# later:
+{ msg: NonNullStr } typed_args @!
+```
+
 ### Label resolution
 
 A bare identifier (label) resolves **lazily**, driven by the type the consuming

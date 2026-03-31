@@ -631,6 +631,84 @@ impl InterpretBuiltIn for ListType {
   }
 }
 
+/// Pops two type values and returns a `Require` type: value must match both.
+///
+/// Usage: `base constraint require @!` → combined type
+///
+/// Arguments may be `DataValue::Type` (for type checks) or any other
+/// `DataValue` (wrapped as `SidType::Literal` for exact-value matching).
+#[derive(Debug)]
+struct RequireType;
+
+impl InterpretBuiltIn for RequireType {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let resolve_type = |raw: DataValue| -> anyhow::Result<SidType> {
+      let resolved = match raw {
+        DataValue::Label(ref l) =>
+          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+            .map_err(|_| anyhow::anyhow!("require: undefined label '{}'", l))?,
+        other => other,
+      };
+      match resolved {
+        DataValue::Type(t) => Ok(t),
+        // Accept any plain value as an exact-match constraint.
+        other => Ok(SidType::Literal(Box::new(other))),
+      }
+    };
+    let constraint = resolve_type(pop_arg(data_stack, "require")?)?;
+    let base       = resolve_type(pop_arg(data_stack, "require")?)?;
+    Ok(vec![DataValue::Type(SidType::Require {
+      base:       Box::new(base),
+      constraint: Box::new(constraint),
+    })])
+  }
+}
+
+/// Pops two type values and returns an `Exclude` type: value must match base
+/// but must NOT match forbidden.
+///
+/// Usage: `base forbidden exclude @!` → combined type
+#[derive(Debug)]
+struct ExcludeType;
+
+impl InterpretBuiltIn for ExcludeType {
+  fn execute(
+    &self,
+    data_stack: &mut Vec<crate::TemplateValue>,
+    global_state: &mut GlobalState<'_>,
+    _program_stack: &mut Vec<crate::ProgramValue>,
+    local_scope: &mut HashMap<String, DataValue>,
+    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+  ) -> anyhow::Result<Vec<DataValue>> {
+    let resolve_type = |raw: DataValue| -> anyhow::Result<SidType> {
+      let resolved = match raw {
+        DataValue::Label(ref l) =>
+          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
+            .map_err(|_| anyhow::anyhow!("exclude: undefined label '{}'", l))?,
+        other => other,
+      };
+      match resolved {
+        DataValue::Type(t) => Ok(t),
+        // Accept any plain value as an exact-match exclusion.
+        other => Ok(SidType::Literal(Box::new(other))),
+      }
+    };
+    let forbidden = resolve_type(pop_arg(data_stack, "exclude")?)?;
+    let base      = resolve_type(pop_arg(data_stack, "exclude")?)?;
+    Ok(vec![DataValue::Type(SidType::Exclude {
+      base:     Box::new(base),
+      forbidden: Box::new(forbidden),
+    })])
+  }
+}
+
 
 ///
 /// Usage: `callable {name: T, …} typed_args !`
@@ -929,6 +1007,8 @@ static DO_WHILE:         DoWhile        = DoWhile;
 static FN_TYPE:          FnType         = FnType;
 static PTR_TYPE:         PtrType        = PtrType;
 static LIST_TYPE:        ListType       = ListType;
+static REQUIRE_TYPE:     RequireType    = RequireType;
+static EXCLUDE_TYPE:     ExcludeType    = ExcludeType;
 static TYPED_ARGS:       TypedArgs      = TypedArgs;
 static TYPED_RETS:       TypedRets      = TypedRets;
 static UNTYPED_ARGS:     UntypedArgs    = UntypedArgs;
@@ -954,6 +1034,8 @@ fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>)
   m.insert("fn",              &FN_TYPE);
   m.insert("ptr",             &PTR_TYPE);
   m.insert("list",            &LIST_TYPE);
+  m.insert("require",         &REQUIRE_TYPE);
+  m.insert("exclude",         &EXCLUDE_TYPE);
   m.insert("typed_args",      &TYPED_ARGS);
   m.insert("typed_rets",      &TYPED_RETS);
   m.insert("untyped_args",    &UNTYPED_ARGS);

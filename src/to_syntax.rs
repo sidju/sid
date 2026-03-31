@@ -139,6 +139,10 @@ impl ToSyntax for SidType {
         s
       },
       SidType::Pointer(pointee)       => format!("{} ptr !", pointee.to_syntax()),
+      SidType::Require { base, constraint } =>
+        format!("{} {} require @!", base.to_syntax(), constraint.to_syntax()),
+      SidType::Exclude { base, forbidden } =>
+        format!("{} {} exclude @!", base.to_syntax(), forbidden.to_syntax()),
       SidType::Any                    => "types.any".to_owned(),
       SidType::Value                  => "types.value".to_owned(),
       SidType::Literal(v)             => v.to_syntax(),

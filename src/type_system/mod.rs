@@ -61,6 +61,12 @@ pub enum SidType {
     /// `T ptr` — a pointer to a value of type `T`; `SidType::Any` for `void*`
     Pointer(Box<Self>),
 
+    // Combinators (RPN: push args then call constructor with @!)
+    /// `base constraint require @!` — value must match both `base` AND `constraint`.
+    Require { base: Box<Self>, constraint: Box<Self> },
+    /// `base forbidden exclude @!` — value must match `base` AND NOT match `forbidden`.
+    Exclude { base: Box<Self>, forbidden: Box<Self> },
+
     // Special
     /// Accepts any value; equivalent to a top type
     Any,
@@ -205,6 +211,12 @@ impl SidType {
         DataValue::Pointer { pointee_ty: vty, .. } => pointee_ty.matches_type(vty),
         _ => false,
       },
+
+      SidType::Require { base, constraint } =>
+        base.matches(value) && constraint.matches(value),
+
+      SidType::Exclude { base, forbidden } =>
+        base.matches(value) && !forbidden.matches(value),
     }
   }
 
