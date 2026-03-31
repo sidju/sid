@@ -8,10 +8,12 @@
 /// match pattern.
 ///
 /// Argument convention:
-/// - Arguments to `require @!` / `exclude @!` use bare labels (`types.str` etc.)
-///   resolved at comptime via scope lookup — NOT `$`-prefixed.
-/// - Fallback match arm keys use `$types.any` (render-time substitution), matching
-///   the pattern used by all other match tests.
+/// - Type arguments to `require @!` / `exclude @!` use `$`-prefixed labels
+///   inside `@{...}` comptime maps (`$types.str` etc.) so they are resolved
+///   eagerly at comptime render time and arrive as `DataValue::Type` values.
+///   A bare label (no `$`) is NOT resolved and becomes a literal label constraint.
+/// - The whole match-case map is `@{...}` so type expressions are fully
+///   computed at comptime and the result is a concrete map at runtime.
 use std::collections::HashMap;
 use sid::*;
 
@@ -60,11 +62,11 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
 // ── require @! ────────────────────────────────────────────────────────────────
 
 /// A value matching both the base type and the exact-value constraint hits the require arm.
-/// `types.int 42 require @!` matches only the int value 42.
+/// `$types.int 42 require @!` matches only the int value 42.
 #[test]
 fn require_matches_both() {
   let stack = run_snippet(
-    "42 {types.int 42 require @!: (true), $types.any: (false)} match !"
+    "42 @{$types.int 42 require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -73,7 +75,7 @@ fn require_matches_both() {
 #[test]
 fn require_misses_when_constraint_fails() {
   let stack = run_snippet(
-    "99 {types.int 42 require @!: (true), $types.any: (false)} match !"
+    "99 @{$types.int 42 require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -82,34 +84,34 @@ fn require_misses_when_constraint_fails() {
 #[test]
 fn require_misses_when_base_fails() {
   let stack = run_snippet(
-    r#""hello" {types.int 42 require @!: (true), $types.any: (false)} match !"#
+    r#""hello" @{$types.int 42 require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// `types.any  types.int  require @!` is equivalent to `types.int` (any AND int = int).
+/// `$types.any  $types.int  require @!` is equivalent to `$types.int` (any AND int = int).
 #[test]
 fn require_any_and_int_matches_int() {
   let stack = run_snippet(
-    "7 {types.any types.int require @!: (true), $types.any: (false)} match !"
+    "7 @{$types.any $types.int require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
 
-/// `types.any  types.int  require @!` does not match a non-int.
+/// `$types.any  $types.int  require @!` does not match a non-int.
 #[test]
 fn require_any_and_int_rejects_str() {
   let stack = run_snippet(
-    r#""hi" {types.any types.int require @!: (true), $types.any: (false)} match !"#
+    r#""hi" @{$types.any $types.int require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// Disjoint types — `types.int  types.str  require @!` matches nothing.
+/// Disjoint types — `$types.int  $types.str  require @!` matches nothing.
 #[test]
 fn require_disjoint_types_matches_nothing() {
   let stack = run_snippet(
-    r#"42 {types.int types.str require @!: (true), $types.any: (false)} match !"#
+    r#"42 @{$types.int $types.str require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -117,11 +119,11 @@ fn require_disjoint_types_matches_nothing() {
 // ── exclude @! ────────────────────────────────────────────────────────────────
 
 /// A value matching the base type but not the forbidden literal hits the exclude arm.
-/// `types.int  0  exclude @!` matches any int except 0.
+/// `$types.int  0  exclude @!` matches any int except 0.
 #[test]
 fn exclude_matches_base_not_forbidden() {
   let stack = run_snippet(
-    "5 {types.int 0 exclude @!: (true), $types.any: (false)} match !"
+    "5 @{$types.int 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -130,35 +132,35 @@ fn exclude_matches_base_not_forbidden() {
 #[test]
 fn exclude_rejects_forbidden_value() {
   let stack = run_snippet(
-    "0 {types.int 0 exclude @!: (true), $types.any: (false)} match !"
+    "0 @{$types.int 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// `types.any  0  exclude @!` acts as "any value except 0".
+/// `$types.any  0  exclude @!` acts as "any value except 0".
 #[test]
 fn exclude_any_except_literal() {
   let stack = run_snippet(
-    r#""hello" {types.any 0 exclude @!: (true), $types.any: (false)} match !"#
+    r#""hello" @{$types.any 0 exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
 
-/// The forbidden literal is rejected from `types.any  forbidden  exclude @!`.
+/// The forbidden literal is rejected from `$types.any  forbidden  exclude @!`.
 #[test]
 fn exclude_any_rejects_forbidden_literal() {
   let stack = run_snippet(
-    "0 {types.any 0 exclude @!: (true), $types.any: (false)} match !"
+    "0 @{$types.any 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
-/// `types.str  types.int  exclude @!` — int is the forbidden type.
-/// A str matches because it IS types.str and is NOT types.int.
+/// `$types.str  $types.int  exclude @!` — int is the forbidden type.
+/// A str matches because it IS $types.str and is NOT $types.int.
 #[test]
 fn exclude_type_as_forbidden_allows_base() {
   let stack = run_snippet(
-    r#""hi" {types.str types.int exclude @!: (true), $types.any: (false)} match !"#
+    r#""hi" @{$types.str $types.int exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -167,19 +169,20 @@ fn exclude_type_as_forbidden_allows_base() {
 #[test]
 fn exclude_base_mismatch_falls_through() {
   let stack = run_snippet(
-    r#"42 {types.str types.int exclude @!: (true), $types.any: (false)} match !"#
+    r#"42 @{$types.str $types.int exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
 // ── null exclusion (canonical use case) ──────────────────────────────────────
 
-/// `types.any  types.null  exclude @!` matches any non-null value.
-/// `types.null` resolves at comptime to the null pointer value, wrapped as SidType::Literal.
+/// `$types.any  $types.null  exclude @!` matches any non-null value.
+/// `$types.null` is `$`-prefixed so it renders as the actual null pointer value,
+/// which is non-Type and therefore wrapped as `SidType::Literal`.
 #[test]
 fn exclude_any_except_null_matches_int() {
   let stack = run_snippet(
-    "42 {types.any types.null exclude @!: (true), $types.any: (false)} match !"
+    "42 @{$types.any $types.null exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -189,7 +192,46 @@ fn exclude_any_except_null_matches_int() {
 #[test]
 fn exclude_any_except_null_rejects_null() {
   let stack = run_snippet(
-    "$types.null {types.any types.null exclude @!: (true), $types.any: (false)} match !"
+    "$types.null @{$types.any $types.null exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
+}
+
+// ── label literal constraints (the bug fix) ───────────────────────────────────
+
+/// A bare label argument is NOT resolved; it becomes a `SidType::Literal(Label(…))`
+/// constraint.  This makes it possible to express "value must be the label `foo`".
+#[test]
+fn require_bare_label_matches_exact_label() {
+  let stack = run_snippet(
+    "foo @{$types.any foo require @!: (true), $types.any: (false)} match !"
+  );
+  assert_eq!(stack, vec![DataValue::Bool(true)]);
+}
+
+/// A different label does not satisfy a literal-label constraint.
+#[test]
+fn require_bare_label_rejects_different_label() {
+  let stack = run_snippet(
+    "bar @{$types.any foo require @!: (true), $types.any: (false)} match !"
+  );
+  assert_eq!(stack, vec![DataValue::Bool(false)]);
+}
+
+/// `exclude @!` with a bare label forbids exactly that label value.
+#[test]
+fn exclude_bare_label_forbids_exact_label() {
+  let stack = run_snippet(
+    "foo @{$types.any foo exclude @!: (true), $types.any: (false)} match !"
+  );
+  assert_eq!(stack, vec![DataValue::Bool(false)]);
+}
+
+/// Other label values pass through the label exclusion.
+#[test]
+fn exclude_bare_label_allows_other_label() {
+  let stack = run_snippet(
+    "bar @{$types.any foo exclude @!: (true), $types.any: (false)} match !"
+  );
+  assert_eq!(stack, vec![DataValue::Bool(true)]);
 }

@@ -644,21 +644,15 @@ impl InterpretBuiltIn for RequireType {
   fn execute(
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
-    global_state: &mut GlobalState<'_>,
+    _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
-    local_scope: &mut HashMap<String, DataValue>,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let resolve_type = |raw: DataValue| -> anyhow::Result<SidType> {
-      let resolved = match raw {
-        DataValue::Label(ref l) =>
-          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
-            .map_err(|_| anyhow::anyhow!("require: undefined label '{}'", l))?,
-        other => other,
-      };
-      match resolved {
+      match raw {
         DataValue::Type(t) => Ok(t),
-        // Accept any plain value as an exact-match constraint.
+        // Accept any plain value (including labels) as an exact-match constraint.
         other => Ok(SidType::Literal(Box::new(other))),
       }
     };
@@ -682,21 +676,15 @@ impl InterpretBuiltIn for ExcludeType {
   fn execute(
     &self,
     data_stack: &mut Vec<crate::TemplateValue>,
-    global_state: &mut GlobalState<'_>,
+    _global_state: &mut GlobalState<'_>,
     _program_stack: &mut Vec<crate::ProgramValue>,
-    local_scope: &mut HashMap<String, DataValue>,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    _local_scope: &mut HashMap<String, DataValue>,
+    _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
   ) -> anyhow::Result<Vec<DataValue>> {
     let resolve_type = |raw: DataValue| -> anyhow::Result<SidType> {
-      let resolved = match raw {
-        DataValue::Label(ref l) =>
-          get_from_scope(l, Some(local_scope), global_state.scope, builtins)
-            .map_err(|_| anyhow::anyhow!("exclude: undefined label '{}'", l))?,
-        other => other,
-      };
-      match resolved {
+      match raw {
         DataValue::Type(t) => Ok(t),
-        // Accept any plain value as an exact-match exclusion.
+        // Accept any plain value (including labels) as an exact-match exclusion.
         other => Ok(SidType::Literal(Box::new(other))),
       }
     };
