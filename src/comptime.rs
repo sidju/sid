@@ -10,7 +10,6 @@ use crate::{
   Template,
   TemplateData,
   TemplateValue,
-  render_template,
 };
 
 /// Run the comptime pass over a flat sequence of [`TemplateValue`]s.
@@ -19,8 +18,6 @@ use crate::{
 /// - `@!` sites whose function and argument are both concrete are evaluated
 ///   and replaced with their results.
 /// - Runtime templates are recursed into so nested `@!` sites are also handled.
-/// - Comptime templates (`comptime: true`) are rendered eagerly against the
-///   current stack and replaced with their concrete `DataValue` result.
 pub fn comptime_pass(
   values: Vec<TemplateValue>,
   builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
@@ -30,16 +27,12 @@ pub fn comptime_pass(
 
   for tv in values {
     match tv {
-      // ── Template: either render eagerly (comptime) or recurse into body ──
+      // ── Template: recurse into body to handle nested @! sites ────────────
       TemplateValue::Literal(ProgramValue::Template(t)) => {
-        if t.comptime {
-          render_comptime_template(t, &mut stack, scope, builtins)?;
-        } else {
-          let new_data = comptime_pass_template_data(t.data, builtins, scope)?;
-          stack.push(TemplateValue::Literal(ProgramValue::Template(
-            Template { data: new_data, consumes_stack_entries: t.consumes_stack_entries, comptime: t.comptime }
-          )));
-        }
+        let new_data = comptime_pass_template_data(t.data, builtins, scope)?;
+        stack.push(TemplateValue::Literal(ProgramValue::Template(
+          Template { data: new_data, consumes_stack_entries: t.consumes_stack_entries }
+        )));
       }
 
       // ── Comptime invoke ───────────────────────────────────────────────────
@@ -93,49 +86,4 @@ fn comptime_pass_template_data(
       Ok(TemplateData::Map(new_pairs))
     }
   }
-}
-
-/// Render a comptime-marked template eagerly, consuming the required entries
-/// from the top of `stack` and pushing the rendered result back.
-fn render_comptime_template(
-  template: Template,
-  stack: &mut Vec<TemplateValue>,
-  scope: &mut HashMap<String, DataValue>,
-  builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-) -> Result<()> {
-  let n = template.consumes_stack_entries;
-  if n > stack.len() {
-    bail!(
-      "Comptime template needs {} parent stack entries but only {} are available",
-      n, stack.len()
-    );
-  }
-
-  // Verify all consumed entries are concrete before mutating the stack.
-  for tv in &stack[stack.len() - n..] {
-    match tv {
-      TemplateValue::Literal(ProgramValue::Data(_)) => {}
-      TemplateValue::Literal(ProgramValue::Template(_)) => bail!(
-        "Comptime template consumed an unrendered runtime template. \
-         Did you mean a comptime template (@{{...}}, @[...], etc.)?"
-      ),
-      other => bail!(
-        "Comptime template consumed a non-concrete value: {:?}", other
-      ),
-    }
-  }
-
-  // Extract parent entries for render_template.
-  let stack_len = stack.len();
-  let mut parent: Vec<TemplateValue> = stack.drain(stack_len - n..).collect();
-
-  // render_template uses scope as both parent and global scope here.
-  let empty_scope = HashMap::new();
-  let mut gs = GlobalState::new(scope);
-  let rendered = render_template(template, &mut parent, &empty_scope, &mut gs, builtins);
-
-  for v in rendered {
-    stack.push(TemplateValue::from(v));
-  }
-  Ok(())
 }

@@ -66,7 +66,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
 #[test]
 fn require_matches_both() {
   let stack = run_snippet(
-    "42 @{$types.int 42 require @!: (true), $types.any: (false)} match !"
+    "42 {types.int get_global @! 42 require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -75,7 +75,7 @@ fn require_matches_both() {
 #[test]
 fn require_misses_when_constraint_fails() {
   let stack = run_snippet(
-    "99 @{$types.int 42 require @!: (true), $types.any: (false)} match !"
+    "99 {types.int get_global @! 42 require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -84,7 +84,7 @@ fn require_misses_when_constraint_fails() {
 #[test]
 fn require_misses_when_base_fails() {
   let stack = run_snippet(
-    r#""hello" @{$types.int 42 require @!: (true), $types.any: (false)} match !"#
+    r#""hello" {types.int get_global @! 42 require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -93,7 +93,7 @@ fn require_misses_when_base_fails() {
 #[test]
 fn require_any_and_int_matches_int() {
   let stack = run_snippet(
-    "7 @{$types.any $types.int require @!: (true), $types.any: (false)} match !"
+    "7 {types.any get_global @! types.int get_global @! require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -102,7 +102,7 @@ fn require_any_and_int_matches_int() {
 #[test]
 fn require_any_and_int_rejects_str() {
   let stack = run_snippet(
-    r#""hi" @{$types.any $types.int require @!: (true), $types.any: (false)} match !"#
+    r#""hi" {types.any get_global @! types.int get_global @! require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -111,7 +111,7 @@ fn require_any_and_int_rejects_str() {
 #[test]
 fn require_disjoint_types_matches_nothing() {
   let stack = run_snippet(
-    r#"42 @{$types.int $types.str require @!: (true), $types.any: (false)} match !"#
+    r#"42 {types.int get_global @! types.str get_global @! require @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -123,7 +123,7 @@ fn require_disjoint_types_matches_nothing() {
 #[test]
 fn exclude_matches_base_not_forbidden() {
   let stack = run_snippet(
-    "5 @{$types.int 0 exclude @!: (true), $types.any: (false)} match !"
+    "5 {types.int get_global @! 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -132,7 +132,7 @@ fn exclude_matches_base_not_forbidden() {
 #[test]
 fn exclude_rejects_forbidden_value() {
   let stack = run_snippet(
-    "0 @{$types.int 0 exclude @!: (true), $types.any: (false)} match !"
+    "0 {types.int get_global @! 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -141,7 +141,7 @@ fn exclude_rejects_forbidden_value() {
 #[test]
 fn exclude_any_except_literal() {
   let stack = run_snippet(
-    r#""hello" @{$types.any 0 exclude @!: (true), $types.any: (false)} match !"#
+    r#""hello" {types.any get_global @! 0 exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -150,7 +150,7 @@ fn exclude_any_except_literal() {
 #[test]
 fn exclude_any_rejects_forbidden_literal() {
   let stack = run_snippet(
-    "0 @{$types.any 0 exclude @!: (true), $types.any: (false)} match !"
+    "0 {types.any get_global @! 0 exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -160,7 +160,7 @@ fn exclude_any_rejects_forbidden_literal() {
 #[test]
 fn exclude_type_as_forbidden_allows_base() {
   let stack = run_snippet(
-    r#""hi" @{$types.str $types.int exclude @!: (true), $types.any: (false)} match !"#
+    r#""hi" {types.str get_global @! types.int get_global @! exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -169,7 +169,7 @@ fn exclude_type_as_forbidden_allows_base() {
 #[test]
 fn exclude_base_mismatch_falls_through() {
   let stack = run_snippet(
-    r#"42 @{$types.str $types.int exclude @!: (true), $types.any: (false)} match !"#
+    r#"42 {types.str get_global @! types.int get_global @! exclude @!: (true), $types.any: (false)} match !"#
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -182,7 +182,7 @@ fn exclude_base_mismatch_falls_through() {
 #[test]
 fn exclude_any_except_null_matches_int() {
   let stack = run_snippet(
-    "42 @{$types.any $types.null exclude @!: (true), $types.any: (false)} match !"
+    "42 {types.any get_global @! types.null get_global @! exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -192,7 +192,7 @@ fn exclude_any_except_null_matches_int() {
 #[test]
 fn exclude_any_except_null_rejects_null() {
   let stack = run_snippet(
-    "$types.null @{$types.any $types.null exclude @!: (true), $types.any: (false)} match !"
+    "$types.null {types.any get_global @! types.null get_global @! exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -204,7 +204,7 @@ fn exclude_any_except_null_rejects_null() {
 #[test]
 fn require_bare_label_matches_exact_label() {
   let stack = run_snippet(
-    "foo @{$types.any foo require @!: (true), $types.any: (false)} match !"
+    "foo {types.any get_global @! foo require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }
@@ -213,7 +213,7 @@ fn require_bare_label_matches_exact_label() {
 #[test]
 fn require_bare_label_rejects_different_label() {
   let stack = run_snippet(
-    "bar @{$types.any foo require @!: (true), $types.any: (false)} match !"
+    "bar {types.any get_global @! foo require @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -222,7 +222,7 @@ fn require_bare_label_rejects_different_label() {
 #[test]
 fn exclude_bare_label_forbids_exact_label() {
   let stack = run_snippet(
-    "foo @{$types.any foo exclude @!: (true), $types.any: (false)} match !"
+    "foo {types.any get_global @! foo exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
@@ -231,7 +231,7 @@ fn exclude_bare_label_forbids_exact_label() {
 #[test]
 fn exclude_bare_label_allows_other_label() {
   let stack = run_snippet(
-    "bar @{$types.any foo exclude @!: (true), $types.any: (false)} match !"
+    "bar {types.any get_global @! foo exclude @!: (true), $types.any: (false)} match !"
   );
   assert_eq!(stack, vec![DataValue::Bool(true)]);
 }

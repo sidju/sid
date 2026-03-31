@@ -7,7 +7,6 @@ mod number;
 mod template;
 mod comment;
 mod invoke;
-mod comptime_template;
 
 pub struct ParseTestFixture {
     pub input: &'static str,

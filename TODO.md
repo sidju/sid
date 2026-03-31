@@ -1,5 +1,8 @@
 - Probably add `pointer_write`, `pointer_read` and `pointer_offset`, to enable the
   same basic pointer usage that C allows through base syntax `*(p+2)`.
+- Consider how comptime should interact with render, should we have comptime render?
+- Decide our attitude to `clone`, `drop`, `get`, and such built-ins that should be
+  redundant with `($1 $1)!`, `($2)!`, `($label)!`. Should they exist?
 
 ## Static analysis (future)
 
@@ -22,13 +25,6 @@
 - Update `examples/structs.sid` (`&` → `$`, use real `local!`, fix unimplemented syntax)
 - Update `examples/reordering.sid` (`&n` → `$n`)
 - Update `examples/nurbs.sid` (match syntax and other outdated constructs)
-
-## AND/NOT match pattern combinators (deferred)
-
-Extend the pattern matching system with AND (matches if all sub-patterns match)
-and NOT (matches if inner pattern does not match) combinators. Syntax TBD —
-design should follow the built-in constructor idiom used elsewhere.
-
 
 ## `&n` back-reference operator
 

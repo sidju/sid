@@ -236,8 +236,8 @@ Both take two arguments from the stack and return a single type.
 `base  constraint  require @!` — value must match **both** `base` and `constraint`.
 
 ```
-types.any   types.int   require @!   # any AND int → equivalent to int
-types.str   Nonempty    require @!   # str that also satisfies Nonempty (alias)
+types.any   types.int          require @!   # any AND int → equivalent to int
+types.str   {"true" "false"}   require @!   # str AND either "true" or "false"
 ```
 
 #### `exclude @!`
@@ -255,7 +255,7 @@ types.str   ""          exclude @!   # any str except the empty string
 A common idiom for non-null arguments:
 
 ```
-NonNullStr   types.str  types.null  exclude @!   def!
+NonNullStr   types.str types.ptr @! types.null exclude @! def!
 # later:
 { msg: NonNullStr } typed_args @!
 ```

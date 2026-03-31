@@ -290,29 +290,22 @@ impl From<Template> for ProgramValue {
 pub struct Template {
   pub data: TemplateData,
   pub consumes_stack_entries: usize,
-  /// If true, this template is rendered eagerly during the comptime pass.
-  pub comptime: bool,
 }
 impl Template {
   pub fn substack(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Substack(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
+    Self { data: TemplateData::Substack(parsed.0), consumes_stack_entries: parsed.1 }
   }
   pub fn list(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::List(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
+    Self { data: TemplateData::List(parsed.0), consumes_stack_entries: parsed.1 }
   }
   pub fn set(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
+    Self { data: TemplateData::Set(parsed.0), consumes_stack_entries: parsed.1 }
   }
   pub fn map(pairs: Vec<(Vec<TemplateValue>, Vec<TemplateValue>)>, consumes: usize) -> Self {
-    Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes, comptime: false }
+    Self { data: TemplateData::Map(pairs), consumes_stack_entries: consumes }
   }
   pub fn script(parsed: (Vec<TemplateValue>, usize)) -> Self {
-    Self { data: TemplateData::Script(parsed.0), consumes_stack_entries: parsed.1, comptime: false }
-  }
-  /// Mark this template for eager evaluation during the comptime pass.
-  pub fn mark_comptime(mut self) -> Self {
-    self.comptime = true;
-    self
+    Self { data: TemplateData::Script(parsed.0), consumes_stack_entries: parsed.1 }
   }
 }
 
