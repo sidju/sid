@@ -8,10 +8,10 @@ pub fn render_test_fixture(
     parent_scope: HashMap<String, DataValue>,
     mut global_scope: HashMap<String, DataValue>,
     expected_parent_stack: Vec<TemplateValue>,
-    expected_rendered_stack: Vec<DataValue>,
+    expected_rendered: DataValue,
 ) {
     let builtins = get_interpret_builtins();
-    let rendered_stack = {
+    let rendered = {
         let mut gs = GlobalState::new(&mut global_scope);
         render_template(
             template,
@@ -26,10 +26,10 @@ pub fn render_test_fixture(
         parent_stack, expected_parent_stack,
         "Parent stack after render wasn't as expected"
     );
-    // Verify rendered stack
+    // Verify rendered value
     assert_eq!(
-        rendered_stack, expected_rendered_stack,
-        "Rendered stack wasn't as expected."
+        rendered, expected_rendered,
+        "Rendered value wasn't as expected."
     );
 }
 
@@ -45,13 +45,12 @@ fn render_empty_substack() {
         HashMap::new(),
         // Expected parent stack
         vec![],
-        // Expected rendered stack
-        vec![DataValue::Substack {
+        // Expected rendered value
+        DataValue::Substack {
             body: vec![],
             args: None,
             ret: None,
-        }
-        .into()],
+        },
     )
 }
 
@@ -77,8 +76,8 @@ fn render_substack() {
         global,
         // Expected parent stack
         vec![DataValue::Bool(true).into()],
-        // Expected rendered stack
-        vec![DataValue::Substack {
+        // Expected rendered value
+        DataValue::Substack {
             body: vec![
                 DataValue::Int(2).into(),
                 DataValue::Int(1).into(),
@@ -87,8 +86,7 @@ fn render_substack() {
             ],
             args: None,
             ret: None,
-        }
-        .into()],
+        },
     )
 }
 
@@ -107,11 +105,11 @@ fn render_list() {
         HashMap::new(),
         HashMap::new(),
         vec![],
-        vec![DataValue::List(vec![
+        DataValue::List(vec![
             DataValue::Int(1),
             DataValue::Int(2),
             DataValue::Int(3),
-        ])],
+        ]),
     )
 }
 
@@ -129,10 +127,10 @@ fn render_set() {
         HashMap::new(),
         HashMap::new(),
         vec![],
-        vec![DataValue::Set(vec![
+        DataValue::Set(vec![
             DataValue::Str(std::ffi::CString::new("a").unwrap()),
             DataValue::Str(std::ffi::CString::new("b").unwrap()),
-        ])],
+        ]),
     )
 }
 
@@ -156,10 +154,10 @@ fn render_map() {
         HashMap::new(),
         HashMap::new(),
         vec![],
-        vec![DataValue::Map(vec![
+        DataValue::Map(vec![
             (DataValue::Label("x".to_owned()), DataValue::Int(1)),
             (DataValue::Label("y".to_owned()), DataValue::Int(2)),
-        ])],
+        ]),
     )
 }
 
@@ -171,10 +169,86 @@ fn render_script() {
         HashMap::new(),
         HashMap::new(),
         vec![],
-        vec![DataValue::Script {
+        DataValue::Script {
             body: vec![ProgramValue::Data(DataValue::Int(42))],
             args: None,
             ret: None,
-        }],
+        },
+    )
+}
+
+// ── $N duplication (clone equivalent) ────────────────────────────────────────
+
+/// A substack that references `$1` twice should render a body containing
+/// two copies of the consumed value — the template-level equivalent of `clone!`.
+#[test]
+fn render_substack_dollar_one_twice() {
+    render_test_fixture(
+        // Template: ($1 $1) — consumes 1 entry, references it twice
+        Template::substack((
+            vec![
+                TemplateValue::ParentStackMove(1),
+                TemplateValue::ParentStackMove(1),
+            ],
+            1,
+        )),
+        // Parent stack: [Int(7)]
+        vec![DataValue::Int(7).into()],
+        HashMap::new(),
+        HashMap::new(),
+        // Parent stack is drained
+        vec![],
+        // Rendered substack body has two copies of 7
+        DataValue::Substack {
+            body: vec![DataValue::Int(7).into(), DataValue::Int(7).into()],
+            args: None,
+            ret: None,
+        },
+    )
+}
+
+// ── implicit drop of unused consumed slots ───────────────────────────────────
+
+/// A substack that consumes 2 entries but only references `$2` should render
+/// a body containing only the second value — the first is implicitly dropped.
+/// This is the template-level equivalent of `drop!`.
+#[test]
+fn render_substack_dollar_two_drops_first() {
+    render_test_fixture(
+        // Template: ($2) — consumes 2 entries, only references $2
+        Template::substack((vec![TemplateValue::ParentStackMove(2)], 2)),
+        // Parent stack: [Int(1), Int(2)]  (2 is on top)
+        vec![DataValue::Int(1).into(), DataValue::Int(2).into()],
+        HashMap::new(),
+        HashMap::new(),
+        // Parent stack is drained
+        vec![],
+        // Rendered substack body has only the second value (2); the first is dropped
+        DataValue::Substack {
+            body: vec![DataValue::Int(2).into()],
+            args: None,
+            ret: None,
+        },
+    )
+}
+
+/// Consuming 3 entries and only referencing `$3` drops the first two.
+#[test]
+fn render_substack_dollar_three_drops_first_two() {
+    render_test_fixture(
+        Template::substack((vec![TemplateValue::ParentStackMove(3)], 3)),
+        vec![
+            DataValue::Int(1).into(),
+            DataValue::Int(2).into(),
+            DataValue::Int(3).into(),
+        ],
+        HashMap::new(),
+        HashMap::new(),
+        vec![],
+        DataValue::Substack {
+            body: vec![DataValue::Int(3).into()],
+            args: None,
+            ret: None,
+        },
     )
 }

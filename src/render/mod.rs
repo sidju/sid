@@ -31,8 +31,9 @@ fn resolve_to_program_values(
                     panic!("Parent stack index 0 is the template!");
                 }
                 let value = consumed_stack[i - 1]
-                    .take()
-                    .expect("Stack value taken twice in template");
+                    .as_ref()
+                    .expect("Stack value missing in template")
+                    .clone();
                 rendered.push(value.into());
             }
         }
@@ -82,7 +83,7 @@ pub fn render_template(
     parent_scope: &HashMap<String, DataValue>,
     global_state: &mut GlobalState,
     builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-) -> Vec<DataValue> {
+) -> DataValue {
     if template.consumes_stack_entries > parent_stack.len() {
         panic!("Template consumes more stack entries than there are.");
     }
@@ -179,7 +180,5 @@ pub fn render_template(
         }
     };
 
-    let mut rendered_stack: Vec<DataValue> = consumed_stack.drain(..).filter_map(|x| x).collect();
-    rendered_stack.push(rendered_template);
-    rendered_stack
+    rendered_template
 }

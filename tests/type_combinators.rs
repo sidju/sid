@@ -23,7 +23,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
     let comptime_builtins = get_comptime_builtins();
     let after_comptime =
         comptime_pass(parsed.0, &comptime_builtins, &mut global_scope).expect("comptime error");
-    let rendered = {
+    let rendered: DataValue = {
         let mut gs = GlobalState::new(&mut global_scope);
         render_template(
             Template::substack((after_comptime, 0)),
@@ -33,7 +33,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
             &comptime_builtins,
         )
     };
-    let instructions: Vec<TemplateValue> = rendered.into_iter().map(TemplateValue::from).collect();
+    let instructions: Vec<TemplateValue> = vec![TemplateValue::from(rendered)];
     let builtins = get_interpret_builtins();
     let mut global_scope_for_run = global_scope;
     let global_state = GlobalState::new(&mut global_scope_for_run);

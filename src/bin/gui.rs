@@ -70,7 +70,7 @@ fn compile(source: &str) -> Program {
         )
     };
     return Program {
-        instructions: rendered,
+        instructions: vec![rendered],
         global_scope,
     };
 }

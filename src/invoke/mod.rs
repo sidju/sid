@@ -466,7 +466,7 @@ pub fn interpret_one<'a, 'b>(
         }
         PV::Template(t) => {
             let rendered = render_template(t, data_stack, local_scope, global_state, builtins);
-            data_stack.extend(rendered.into_iter().map(TemplateValue::from));
+            data_stack.push(TemplateValue::from(rendered));
         }
         PV::Invoke | PV::ComptimeInvoke => {
             invoke(

@@ -43,8 +43,8 @@ fn compile(source: &str) -> Program {
             &comptime_builtins,
         )
     };
-    // render_template returns Vec<DataValue>; lift them into TemplateValue.
-    let instructions = rendered.into_iter().map(TemplateValue::from).collect();
+    // render_template returns a DataValue; lift it into TemplateValue.
+    let instructions = vec![TemplateValue::from(rendered)];
     Program {
         instructions,
         global_scope,
