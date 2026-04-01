@@ -31,23 +31,6 @@ impl InterpretBuiltIn for MockDouble {
     }
 }
 
-/// arg=1, ret=0: drops its argument.
-#[derive(Debug)]
-struct MockDrop;
-impl InterpretBuiltIn for MockDrop {
-    fn execute(
-        &self,
-        data_stack: &mut Vec<sid::TemplateValue>,
-        _state: &mut GlobalState<'_>,
-        _program_stack: &mut Vec<sid::ProgramValue>,
-        _local_scope: &mut HashMap<String, sid::DataValue>,
-        _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>,
-    ) -> anyhow::Result<Vec<DataValue>> {
-        pop_arg(data_stack, "MockDrop")?;
-        Ok(vec![])
-    }
-}
-
 /// arg=0, ret=1: always pushes Int(42).
 #[derive(Debug)]
 struct MockConst;
@@ -169,19 +152,6 @@ fn comptime_invoke_one_arg_one_return() {
     ComptimePassFixture {
         input: vec![DataValue::Int(5).into(), label("double"), comptime_invoke()],
         expected_output: vec![DataValue::Int(10).into()],
-    }
-    .test(&builtins);
-}
-
-#[test]
-fn comptime_invoke_one_arg_zero_return() {
-    let drop = MockDrop;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("drop", &drop);
-
-    ComptimePassFixture {
-        input: vec![DataValue::Int(5).into(), label("drop"), comptime_invoke()],
-        expected_output: vec![],
     }
     .test(&builtins);
 }

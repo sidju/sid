@@ -114,7 +114,7 @@ fn while_do_resolves_substack_labels() {
 fn while_do_label_runs_loop() {
     // Counts from 0 to 1: cond checks == 0, body increments.
     let stack = run_snippet(
-        "(my_cond (clone! 0 eq!) local! \
+        "(my_cond (($1 $1)! 0 eq!) local! \
      my_body (1 ($2 $1)! drop!) local! \
      0 my_cond my_body while_do !) !",
     );
@@ -126,10 +126,10 @@ fn while_do_label_runs_loop() {
 /// Labels pointing to body and condition substacks are resolved by `do_while`.
 #[test]
 fn do_while_resolves_substack_labels() {
-    // body increments 0→1; cond checks clone==0 (false after increment) → one iteration.
+    // body increments 0→1; cond checks duplicate==0 (false after increment) → one iteration.
     let stack = run_snippet(
         "(my_body (1 ($2 $1)! drop!) local! \
-     my_cond (clone! 0 eq!) local! \
+     my_cond (($1 $1)! 0 eq!) local! \
      0 my_body my_cond do_while !) !",
     );
     assert_eq!(stack, vec![DataValue::Int(1)]);
