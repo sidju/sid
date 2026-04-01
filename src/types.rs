@@ -1,6 +1,5 @@
 use crate::c_ffi::{CFunc, CFuncSig};
 use crate::type_system::SidType;
-use anyhow::Result;
 use libloading::Library;
 /// Defines the possible types at each stage of the execution process.
 ///
@@ -70,7 +69,7 @@ pub fn get_from_scope(
     label: &str,
     local: Option<&HashMap<String, DataValue>>,
     global: Option<&HashMap<String, DataValue>>,
-    builtins: Option<&HashMap<&str, &dyn InterpretBuiltIn>>,
+    builtin_names: Option<&std::collections::HashSet<&'static str>>,
 ) -> anyhow::Result<DataValue> {
     let mut segments = label.split('.');
     let root = segments.next().unwrap();
@@ -80,8 +79,8 @@ pub fn get_from_scope(
         .or_else(|| global.and_then(|g| g.get(root)))
         .cloned()
         .or_else(|| {
-            builtins.and_then(|b| {
-                b.contains_key(root)
+            builtin_names.and_then(|b| {
+                b.contains(root)
                     .then(|| DataValue::BuiltIn(root.to_owned()))
             })
         })
@@ -115,36 +114,14 @@ pub fn resolve_if_label(
     v: DataValue,
     local_scope: Option<&HashMap<String, DataValue>>,
     global_scope: Option<&HashMap<String, DataValue>>,
-    builtins: Option<&HashMap<&str, &dyn InterpretBuiltIn>>,
+    builtin_names: Option<&std::collections::HashSet<&'static str>>,
 ) -> DataValue {
     match v {
         DataValue::Label(ref l) => {
-            get_from_scope(l, local_scope, global_scope, builtins).unwrap_or(v)
+            get_from_scope(l, local_scope, global_scope, builtin_names).unwrap_or(v)
         }
         other => other,
     }
-}
-
-pub trait InterpretBuiltIn: Debug {
-    fn execute(
-        &self,
-        data_stack: &mut Vec<TemplateValue>,
-        global_state: &mut GlobalState<'_>,
-        program_stack: &mut Vec<ProgramValue>,
-        local_scope: &mut HashMap<String, DataValue>,
-        builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
-    ) -> Result<Vec<DataValue>>;
-}
-
-/// A built-in function that generates LLVM IR during compilation.
-///
-/// TODO: This trait is a placeholder. Methods for IR generation via the LLVM
-/// backend will be added here when the compile path is further developed.
-/// CompileBuiltIn functions can only be integration-tested against the LLVM
-/// backend; they are not unit-testable with the interpreter alone.
-pub trait CompileBuiltIn: Debug {
-    fn arg_count(&self) -> u8;
-    fn return_count(&self) -> u8;
 }
 
 /// A fully concrete value — the currency of the data stack and scope maps.

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use super::{
     call_c_function, call_cfuncsig, get_from_scope, render_template, resolve_if_label, DataValue,
-    GlobalState, InterpretBuiltIn, ProgramValue, SidType, TemplateValue,
+    GlobalState, ProgramValue, SidType, TemplateValue,
 };
+use crate::built_in::BuiltinEntry;
 
 /// Collect arguments for a callable from the data stack, supporting two
 /// calling conventions for N > 1 fixed params:
@@ -178,7 +179,7 @@ pub(crate) fn check_type_contract(
     context: &str,
     local_scope: &HashMap<String, DataValue>,
     global_scope: &HashMap<String, DataValue>,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtin_names: &std::collections::HashSet<&'static str>,
 ) {
     if data_stack.len() < types.len() {
         panic!(
@@ -201,13 +202,12 @@ pub(crate) fn check_type_contract(
       ),
         };
         if !expected.matches(actual) {
-            // If it's a label, try resolving it before failing.
             if let DataValue::Label(_) = actual {
                 let resolved = resolve_if_label(
                     actual.clone(),
                     Some(local_scope),
                     Some(global_scope),
-                    Some(builtins),
+                    Some(builtin_names),
                 );
                 if expected.matches(&resolved) {
                     data_stack[stack_idx] = TemplateValue::from(resolved);
@@ -235,22 +235,23 @@ pub struct ExeState<'a> {
     /// and installs a fresh empty one; `PopScope` restores it.
     pub scope_stack: Vec<HashMap<String, DataValue>>,
     pub global_state: GlobalState<'a>,
+    pub builtins: &'a HashMap<&'static str, BuiltinEntry>,
 }
 
-pub fn invoke<'a, 'b>(
+pub fn invoke<'a>(
     data_stack: &mut Vec<TemplateValue>,
     program_stack: &mut Vec<ProgramValue>,
     local_scope: &mut HashMap<String, DataValue>,
     global_state: &mut GlobalState<'a>,
-    builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) {
-    // Resolve labels via scope, falling back to built-ins at lowest priority.
+    let builtin_names: std::collections::HashSet<&'static str> = builtins.keys().copied().collect();
     let value = match data_stack.pop() {
         Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Label(l)))) => get_from_scope(
             &l,
             Some(local_scope),
             Some(global_state.scope),
-            Some(builtins),
+            Some(&builtin_names),
         )
         .expect("label resolution failed"),
         Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,
@@ -258,15 +259,6 @@ pub fn invoke<'a, 'b>(
         None => panic!("Invoked on empty data_stack!"),
     };
     match value {
-        // Invoking a substack: check arg types (if declared), schedule ret check
-        // (if declared), then push the body onto the program stack.
-        // Both args and ret are stored top-first (index 0 = top of stack).
-        //
-        // Every substack gets a fresh local scope (PushScope / PopScope sentinels).
-        // When `args` are declared a `StackBlock` is inserted below the top N items
-        // on the data stack so the body cannot accidentally read the caller's stack.
-        // The `TypeCheck` sentinel (with `block_placed: true`) fires after the body
-        // and PopScope to remove the block and optionally verify return types.
         DataValue::Substack {
             body: mut s,
             args,
@@ -280,9 +272,6 @@ pub fn invoke<'a, 'b>(
                 .unwrap_or_default();
             if let Some(ref arg_fields) = args {
                 let n = arg_fields.len();
-                // Struct form: if N > 1 and the top of stack is a Map with matching keys,
-                // pop it and push individual values in top-first order so the existing
-                // check_type_contract + PushScope machinery handles them normally.
                 if n > 1 {
                     if let Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Map(
                         ref entries,
@@ -302,7 +291,6 @@ pub fn invoke<'a, 'b>(
                             && names.iter().all(|p| map_keys.contains(p.as_str()))
                         {
                             data_stack.pop();
-                            // Push in reverse of names order so top of stack = names[0] (top-first convention).
                             for name in names.iter().rev() {
                                 let v = entries
                                     .iter()
@@ -313,7 +301,7 @@ pub fn invoke<'a, 'b>(
                                     v,
                                     Some(local_scope),
                                     Some(global_state.scope),
-                                    Some(builtins),
+                                    Some(&builtin_names),
                                 );
                                 data_stack.push(TemplateValue::from(v));
                             }
@@ -328,14 +316,12 @@ pub fn invoke<'a, 'b>(
                     "substack",
                     local_scope,
                     global_state.scope,
-                    builtins,
+                    &builtin_names,
                 );
-                // Insert StackBlock below the args; args will be consumed by PushScope.
                 let n = arg_fields.len();
                 let insert_pos = data_stack.len() - n;
                 data_stack.insert(insert_pos, TemplateValue::from(DataValue::StackBlock));
             }
-            // Schedule cleanup / ret check (fires last, after PopScope).
             match (&args, &ret) {
                 (None, None) => {}
                 _ => program_stack.push(ProgramValue::TypeCheck {
@@ -349,24 +335,79 @@ pub fn invoke<'a, 'b>(
             program_stack.push(ProgramValue::PushScope { names });
         }
 
-        // Invoking a built-in via the InterpretBuiltIn trait:
-        // arg_count/return_count determine stack interaction.
-        DataValue::BuiltIn(function) => {
-            let builtin = builtins[&function[..]];
-            for result in builtin
-                .execute(
-                    data_stack,
-                    global_state,
-                    program_stack,
-                    local_scope,
-                    builtins,
-                )
-                .unwrap_or_else(|e| panic!("BuiltIn '{}' returned error: {}", function, e))
-            {
-                data_stack.push(TemplateValue::from(result));
+        DataValue::BuiltIn(name) => {
+            let entry = &builtins[name.as_str()];
+            let mut exe_state = ExeState {
+                program_stack: std::mem::take(program_stack),
+                data_stack: std::mem::take(data_stack),
+                local_scope: std::mem::take(local_scope),
+                scope_stack: Vec::new(),
+                global_state: GlobalState::new(global_state.scope),
+                builtins,
+            };
+            exe_state.global_state.libraries = std::mem::take(&mut global_state.libraries);
+
+            let arg_values: Vec<DataValue> = entry
+                .args
+                .iter()
+                .enumerate()
+                .rev()
+                .map(|(i, expected_type)| {
+                    let stack_idx = exe_state.data_stack.len() - 1 - i;
+                    let tv = exe_state.data_stack[stack_idx].clone();
+                    let v = match tv {
+                        TemplateValue::Literal(ProgramValue::Data(v)) => v,
+                        other => {
+                            panic!("builtin '{}': argument is not concrete: {:?}", name, other)
+                        }
+                    };
+                    let should_keep_label = matches!(expected_type, SidType::Label);
+                    if expected_type.matches(&v)
+                        && (should_keep_label || !matches!(v, DataValue::Label(_)))
+                    {
+                        v
+                    } else if let DataValue::Label(ref l) = v {
+                        let resolved = get_from_scope(
+                            l,
+                            Some(&exe_state.local_scope),
+                            Some(exe_state.global_state.scope),
+                            Some(&builtin_names),
+                        )
+                        .unwrap_or_else(|_| v.clone());
+                        if expected_type.matches(&resolved) {
+                            resolved
+                        } else {
+                            panic!(
+                                "builtin '{}': arg {} expected {:?}, label '{}' resolved to {:?}",
+                                name, i, expected_type, l, resolved
+                            );
+                        }
+                    } else if expected_type.matches(&v) {
+                        v
+                    } else {
+                        panic!(
+                            "builtin '{}': arg {} expected {:?}, got {:?}",
+                            name, i, expected_type, v
+                        );
+                    }
+                })
+                .collect();
+
+            for _ in 0..entry.args.len() {
+                exe_state.data_stack.pop();
             }
+
+            let results = (entry.exec)(&mut exe_state, arg_values);
+
+            for result in results {
+                exe_state.data_stack.push(TemplateValue::from(result));
+            }
+
+            *program_stack = exe_state.program_stack;
+            *data_stack = exe_state.data_stack;
+            *local_scope = exe_state.local_scope;
+            global_state.libraries = exe_state.global_state.libraries;
         }
-        // Invoking a linked CFuncSig: look up the symbol by name at call time.
         DataValue::CFuncSig(sig) => {
             let ctx = format!("CFuncSig '{}'", sig.name);
             let resolve = |v: DataValue| match v {
@@ -374,7 +415,7 @@ pub fn invoke<'a, 'b>(
                     l,
                     Some(local_scope),
                     Some(global_state.scope),
-                    Some(builtins),
+                    Some(&builtin_names),
                 )
                 .unwrap_or_else(|e| panic!("CFuncSig '{}': {}", sig.name, e)),
                 other => other,
@@ -393,7 +434,6 @@ pub fn invoke<'a, 'b>(
                 data_stack.push(TemplateValue::from(result));
             }
         }
-        // Invoking a dynamically-loaded C function via libffi.
         DataValue::CFunction(f) => {
             let ctx = format!("CFunction '{}'", f.name);
             let resolve = |v: DataValue| match v {
@@ -401,7 +441,7 @@ pub fn invoke<'a, 'b>(
                     l,
                     Some(local_scope),
                     Some(global_state.scope),
-                    Some(builtins),
+                    Some(&builtin_names),
                 )
                 .unwrap_or_else(|e| panic!("CFunction '{}': {}", f.name, e)),
                 other => other,
@@ -424,11 +464,11 @@ pub fn invoke<'a, 'b>(
     }
 }
 
-pub fn interpret<'a, 'b>(
+pub fn interpret<'a>(
     program: Vec<ProgramValue>,
     data_stack: Vec<TemplateValue>,
     global_state: GlobalState<'a>,
-    builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) {
     let local_scope = HashMap::new();
     let mut exe_state = ExeState {
@@ -437,6 +477,7 @@ pub fn interpret<'a, 'b>(
         local_scope,
         scope_stack: Vec::new(),
         global_state,
+        builtins,
     };
     while !exe_state.program_stack.is_empty() {
         interpret_one(
@@ -450,16 +491,17 @@ pub fn interpret<'a, 'b>(
     }
 }
 
-pub fn interpret_one<'a, 'b>(
+pub fn interpret_one<'a>(
     data_stack: &mut Vec<TemplateValue>,
     program_stack: &mut Vec<ProgramValue>,
     local_scope: &mut HashMap<String, DataValue>,
     scope_stack: &mut Vec<HashMap<String, DataValue>>,
     global_state: &mut GlobalState<'a>,
-    builtins: &HashMap<&'b str, &'b dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) {
     use ProgramValue as PV;
     let operation = program_stack.pop().unwrap();
+    let builtin_names: std::collections::HashSet<&'static str> = builtins.keys().copied().collect();
     match operation {
         PV::Data(v) => {
             data_stack.push(TemplateValue::Literal(PV::Data(v)));
@@ -510,7 +552,6 @@ pub fn interpret_one<'a, 'b>(
                 None => unreachable!(),
             };
             if bool_val {
-                // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
                 program_stack.push(PV::CondLoop {
                     cond: cond.clone(),
                     body: body.clone(),
@@ -523,8 +564,6 @@ pub fn interpret_one<'a, 'b>(
             }
         }
         PV::CondLoopStart { cond, body } => {
-            // Initial condition of a while_do just ran. Pop its Bool and, if true,
-            // capture expected_len from the current stack and schedule subsequent iters.
             let bool_val = match data_stack.pop() {
                 Some(TemplateValue::Literal(ProgramValue::Data(DataValue::Bool(b)))) => b,
                 Some(other) => panic!(
@@ -537,7 +576,6 @@ pub fn interpret_one<'a, 'b>(
             };
             if bool_val {
                 let expected_len = data_stack.len();
-                // Push in reverse execution order: CondLoop (last) → cond+Invoke → body+Invoke (first).
                 program_stack.push(PV::CondLoop {
                     cond: cond.clone(),
                     body: body.clone(),
@@ -555,7 +593,6 @@ pub fn interpret_one<'a, 'b>(
             block_placed,
         } => {
             if block_placed {
-                // Find the StackBlock inserted at invocation time.
                 let block_pos = data_stack
                     .iter()
                     .rposition(|tv| {
@@ -585,7 +622,7 @@ pub fn interpret_one<'a, 'b>(
                         &context,
                         local_scope,
                         global_state.scope,
-                        builtins,
+                        &builtin_names,
                     );
                 }
                 data_stack.remove(block_pos);
@@ -597,15 +634,13 @@ pub fn interpret_one<'a, 'b>(
                     &context,
                     local_scope,
                     global_state.scope,
-                    builtins,
+                    &builtin_names,
                 );
             }
         }
         PV::PushScope { names } => {
             let old_scope = std::mem::replace(local_scope, HashMap::new());
             scope_stack.push(old_scope);
-            // Consume args from the top of the data stack (top-first order matches names[0]).
-            // Labels are already resolved in-place by check_type_contract if needed.
             for name in names.into_iter() {
                 let value = match data_stack.pop() {
                     Some(TemplateValue::Literal(ProgramValue::Data(v))) => v,

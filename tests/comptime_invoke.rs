@@ -2,76 +2,31 @@ use std::collections::HashMap;
 
 use sid::*;
 
-fn pop_arg(data_stack: &mut Vec<sid::TemplateValue>, name: &str) -> anyhow::Result<DataValue> {
-    match data_stack.pop() {
-        Some(TemplateValue::Literal(ProgramValue::Data(v))) => Ok(v),
-        Some(other) => anyhow::bail!("{}: argument is not a concrete value: {:?}", name, other),
-        None => anyhow::bail!("{}: expected an argument but the stack was empty", name),
+fn mock_double(_state: &mut sid::ExeState, args: Vec<DataValue>) -> Vec<DataValue> {
+    match args.into_iter().next() {
+        Some(DataValue::Int(n)) => vec![DataValue::Int(n * 2)],
+        Some(other) => panic!("MockDouble: expected Int, got {:?}", other),
+        None => panic!("MockDouble: expected an argument"),
     }
 }
 
-// ── Mock builtins ────────────────────────────────────────────────────────────
-
-/// arg=1, ret=1: doubles an Int.
-#[derive(Debug)]
-struct MockDouble;
-impl InterpretBuiltIn for MockDouble {
-    fn execute(
-        &self,
-        data_stack: &mut Vec<sid::TemplateValue>,
-        _state: &mut GlobalState<'_>,
-        _program_stack: &mut Vec<sid::ProgramValue>,
-        _local_scope: &mut HashMap<String, sid::DataValue>,
-        _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>,
-    ) -> anyhow::Result<Vec<DataValue>> {
-        match pop_arg(data_stack, "MockDouble")? {
-            DataValue::Int(n) => Ok(vec![DataValue::Int(n * 2)]),
-            other => anyhow::bail!("MockDouble: expected Int, got {:?}", other),
-        }
+fn mock_drop(_state: &mut sid::ExeState, args: Vec<DataValue>) -> Vec<DataValue> {
+    if args.is_empty() {
+        panic!("MockDrop: expected an argument");
     }
+    vec![]
 }
 
-/// arg=1, ret=0: drops its argument.
-#[derive(Debug)]
-struct MockDrop;
-impl InterpretBuiltIn for MockDrop {
-    fn execute(
-        &self,
-        data_stack: &mut Vec<sid::TemplateValue>,
-        _state: &mut GlobalState<'_>,
-        _program_stack: &mut Vec<sid::ProgramValue>,
-        _local_scope: &mut HashMap<String, sid::DataValue>,
-        _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>,
-    ) -> anyhow::Result<Vec<DataValue>> {
-        pop_arg(data_stack, "MockDrop")?;
-        Ok(vec![])
-    }
+fn mock_const(_state: &mut sid::ExeState, _args: Vec<DataValue>) -> Vec<DataValue> {
+    vec![DataValue::Int(42)]
 }
-
-/// arg=0, ret=1: always pushes Int(42).
-#[derive(Debug)]
-struct MockConst;
-impl InterpretBuiltIn for MockConst {
-    fn execute(
-        &self,
-        _data_stack: &mut Vec<sid::TemplateValue>,
-        _state: &mut GlobalState<'_>,
-        _program_stack: &mut Vec<sid::ProgramValue>,
-        _local_scope: &mut HashMap<String, sid::DataValue>,
-        _builtins: &HashMap<&str, &dyn sid::InterpretBuiltIn>,
-    ) -> anyhow::Result<Vec<DataValue>> {
-        Ok(vec![DataValue::Int(42)])
-    }
-}
-
-// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 pub struct ComptimePassFixture {
     pub input: Vec<TemplateValue>,
     pub expected_output: Vec<TemplateValue>,
 }
 impl ComptimePassFixture {
-    pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
+    pub fn test(&self, builtins: &HashMap<&'static str, sid::BuiltinEntry>) {
         let result = comptime_pass(self.input.clone(), builtins, &mut HashMap::new())
             .expect("comptime_pass failed unexpectedly");
         assert_eq!(
@@ -85,7 +40,7 @@ pub struct ComptimeErrorFixture {
     pub input: Vec<TemplateValue>,
 }
 impl ComptimeErrorFixture {
-    pub fn test(&self, builtins: &HashMap<&str, &dyn InterpretBuiltIn>) {
+    pub fn test(&self, builtins: &HashMap<&'static str, sid::BuiltinEntry>) {
         assert!(
             comptime_pass(self.input.clone(), builtins, &mut HashMap::new()).is_err(),
             "expected comptime_pass to return Err but it succeeded"
@@ -93,9 +48,7 @@ impl ComptimeErrorFixture {
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn no_builtins<'a>() -> HashMap<&'a str, &'a dyn InterpretBuiltIn> {
+fn no_builtins() -> HashMap<&'static str, sid::BuiltinEntry> {
     HashMap::new()
 }
 
@@ -106,8 +59,6 @@ fn comptime_invoke() -> TemplateValue {
 fn label(s: &str) -> TemplateValue {
     DataValue::Label(s.to_owned()).into()
 }
-
-// ── Pass-through tests ────────────────────────────────────────────────────────
 
 #[test]
 fn passthrough_plain_values() {
@@ -126,7 +77,6 @@ fn passthrough_plain_values() {
 
 #[test]
 fn passthrough_runtime_invoke() {
-    // A plain ! should survive the comptime pass untouched.
     ComptimePassFixture {
         input: vec![
             DataValue::Int(5).into(),
@@ -144,7 +94,6 @@ fn passthrough_runtime_invoke() {
 
 #[test]
 fn passthrough_parent_refs() {
-    // ParentStackMove and ParentLabel entries pass through untouched.
     ComptimePassFixture {
         input: vec![
             TemplateValue::ParentStackMove(1),
@@ -158,13 +107,18 @@ fn passthrough_parent_refs() {
     .test(&no_builtins());
 }
 
-// ── @! invocation tests ───────────────────────────────────────────────────────
-
 #[test]
 fn comptime_invoke_one_arg_one_return() {
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     ComptimePassFixture {
         input: vec![DataValue::Int(5).into(), label("double"), comptime_invoke()],
@@ -175,9 +129,16 @@ fn comptime_invoke_one_arg_one_return() {
 
 #[test]
 fn comptime_invoke_one_arg_zero_return() {
-    let drop = MockDrop;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("drop", &drop);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "drop",
+        sid::BuiltinEntry {
+            name: "drop",
+            args: vec![SidType::Any],
+            ret: vec![],
+            exec: mock_drop,
+        },
+    );
 
     ComptimePassFixture {
         input: vec![DataValue::Int(5).into(), label("drop"), comptime_invoke()],
@@ -188,9 +149,16 @@ fn comptime_invoke_one_arg_zero_return() {
 
 #[test]
 fn comptime_invoke_zero_arg_one_return() {
-    let c = MockConst;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("const", &c);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "const",
+        sid::BuiltinEntry {
+            name: "const",
+            args: vec![],
+            ret: vec![SidType::Int],
+            exec: mock_const,
+        },
+    );
 
     ComptimePassFixture {
         input: vec![label("const"), comptime_invoke()],
@@ -201,10 +169,16 @@ fn comptime_invoke_zero_arg_one_return() {
 
 #[test]
 fn comptime_invoke_leaves_surrounding_stack_intact() {
-    // Values before and after the @! site should be untouched.
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     ComptimePassFixture {
         input: vec![
@@ -223,13 +197,18 @@ fn comptime_invoke_leaves_surrounding_stack_intact() {
     .test(&builtins);
 }
 
-// ── Recursion into template bodies ───────────────────────────────────────────
-
 #[test]
 fn recurses_into_substack_body() {
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     let input_body = Template::substack((
         vec![DataValue::Int(5).into(), label("double"), comptime_invoke()],
@@ -247,9 +226,16 @@ fn recurses_into_substack_body() {
 
 #[test]
 fn recurses_into_list_body() {
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     let input_body = Template::list((
         vec![DataValue::Int(3).into(), label("double"), comptime_invoke()],
@@ -267,9 +253,16 @@ fn recurses_into_list_body() {
 
 #[test]
 fn recurses_into_script_body() {
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     let input_body = Template::script((
         vec![DataValue::Int(7).into(), label("double"), comptime_invoke()],
@@ -285,8 +278,6 @@ fn recurses_into_script_body() {
     .test(&builtins);
 }
 
-// ── Error cases ───────────────────────────────────────────────────────────────
-
 #[test]
 fn error_comptime_invoke_unknown_function() {
     ComptimeErrorFixture {
@@ -301,12 +292,18 @@ fn error_comptime_invoke_unknown_function() {
 
 #[test]
 fn error_comptime_invoke_unrendered_template_as_arg() {
-    // Argument to @! is an unrendered runtime template — must be a hard error.
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
-    let unrendered = Template::substack((vec![], 0)); // comptime: false
+    let unrendered = Template::substack((vec![], 0));
     ComptimeErrorFixture {
         input: vec![
             TemplateValue::Literal(ProgramValue::Template(unrendered)),
@@ -319,10 +316,16 @@ fn error_comptime_invoke_unrendered_template_as_arg() {
 
 #[test]
 fn error_comptime_invoke_parent_ref_as_arg() {
-    // A ParentStackMove on the stack cannot be used as a @! argument.
-    let double = MockDouble;
-    let mut builtins: HashMap<&str, &dyn InterpretBuiltIn> = HashMap::new();
-    builtins.insert("double", &double);
+    let mut builtins: HashMap<&'static str, sid::BuiltinEntry> = HashMap::new();
+    builtins.insert(
+        "double",
+        sid::BuiltinEntry {
+            name: "double",
+            args: vec![SidType::Int],
+            ret: vec![SidType::Int],
+            exec: mock_double,
+        },
+    );
 
     ComptimeErrorFixture {
         input: vec![

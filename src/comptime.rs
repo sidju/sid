@@ -2,26 +2,19 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 
-use crate::{
-    DataValue, GlobalState, InterpretBuiltIn, ProgramValue, Template, TemplateData, TemplateValue,
-};
+use crate::built_in::BuiltinEntry;
+use crate::invoke::ExeState;
+use crate::{DataValue, GlobalState, ProgramValue, Template, TemplateData, TemplateValue};
 
-/// Run the comptime pass over a flat sequence of [`TemplateValue`]s.
-///
-/// The returned `Vec<TemplateValue>` is a modified version of the input:
-/// - `@!` sites whose function and argument are both concrete are evaluated
-///   and replaced with their results.
-/// - Runtime templates are recursed into so nested `@!` sites are also handled.
 pub fn comptime_pass(
     values: Vec<TemplateValue>,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
     scope: &mut HashMap<String, DataValue>,
 ) -> Result<Vec<TemplateValue>> {
     let mut stack: Vec<TemplateValue> = Vec::new();
 
     for tv in values {
         match tv {
-            // ── Template: recurse into body to handle nested @! sites ────────────
             TemplateValue::Literal(ProgramValue::Template(t)) => {
                 let new_data = comptime_pass_template_data(t.data, builtins, scope)?;
                 stack.push(TemplateValue::Literal(ProgramValue::Template(Template {
@@ -30,9 +23,7 @@ pub fn comptime_pass(
                 })));
             }
 
-            // ── Comptime invoke ───────────────────────────────────────────────────
             TemplateValue::Literal(ProgramValue::ComptimeInvoke) => {
-                // Pop function — must be a concrete label.
                 let fn_tv = stack
                     .pop()
                     .ok_or_else(|| anyhow::anyhow!("@! on empty stack"))?;
@@ -41,23 +32,50 @@ pub fn comptime_pass(
                     other => bail!("@! invoked on a non-label value: {:?}", other),
                 };
 
-                let builtin = builtins
+                let entry = builtins
                     .get(fn_name.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Unknown comptime function: '{}'", fn_name))?;
 
-                let mut gs = GlobalState::new(scope);
-                for result in builtin.execute(
-                    &mut stack,
-                    &mut gs,
-                    &mut vec![],
-                    &mut HashMap::new(),
+                let global_state = GlobalState::new(scope);
+                let mut exe_state = ExeState {
+                    program_stack: Vec::new(),
+                    data_stack: stack,
+                    local_scope: HashMap::new(),
+                    scope_stack: Vec::new(),
+                    global_state,
                     builtins,
-                )? {
-                    stack.push(TemplateValue::from(result));
+                };
+
+                let arg_values: Result<Vec<DataValue>> = (0..entry.args.len())
+                    .rev()
+                    .map(|i| {
+                        let tv = &exe_state.data_stack[exe_state.data_stack.len() - 1 - i];
+                        match tv {
+                            TemplateValue::Literal(ProgramValue::Data(v)) => Ok(v.clone()),
+                            other => bail!(
+                                "builtin '{}': argument is not concrete: {:?}",
+                                fn_name,
+                                other
+                            ),
+                        }
+                    })
+                    .collect();
+
+                let arg_values = arg_values?;
+
+                for _ in 0..entry.args.len() {
+                    exe_state.data_stack.pop();
                 }
+
+                let results = (entry.exec)(&mut exe_state, arg_values);
+
+                for result in results {
+                    exe_state.data_stack.push(TemplateValue::from(result));
+                }
+
+                stack = exe_state.data_stack;
             }
 
-            // ── Everything else: pass through ─────────────────────────────────────
             other => stack.push(other),
         }
     }
@@ -65,10 +83,9 @@ pub fn comptime_pass(
     Ok(stack)
 }
 
-/// Recursively apply the comptime pass to all inner [`TemplateData`] bodies.
 fn comptime_pass_template_data(
     data: TemplateData,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
     scope: &mut HashMap<String, DataValue>,
 ) -> Result<TemplateData> {
     match data {

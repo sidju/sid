@@ -1,19 +1,18 @@
 use std::collections::HashMap;
 
+use crate::built_in::BuiltinEntry;
 use crate::{
-    get_from_scope, DataValue, GlobalState, InterpretBuiltIn, ProgramValue, Template, TemplateData,
-    TemplateValue,
+    get_from_scope, DataValue, GlobalState, ProgramValue, Template, TemplateData, TemplateValue,
 };
 
-/// Resolve a sequence of `TemplateValue`s into `ProgramValue`s, consuming
-/// parent stack slots and looking up parent labels as needed.
 fn resolve_to_program_values(
     source: Vec<TemplateValue>,
     consumed_stack: &mut Vec<Option<DataValue>>,
     parent_scope: &HashMap<String, DataValue>,
     global_scope: &HashMap<String, DataValue>,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) -> Vec<ProgramValue> {
+    let builtin_names: std::collections::HashSet<&'static str> = builtins.keys().copied().collect();
     let mut rendered: Vec<ProgramValue> = Vec::new();
     use TemplateValue as TV;
     for entry in source {
@@ -22,8 +21,13 @@ fn resolve_to_program_values(
                 rendered.push(v);
             }
             TV::ParentLabel(l) => {
-                let v = get_from_scope(&l, Some(parent_scope), Some(global_scope), Some(builtins))
-                    .expect("label resolution failed");
+                let v = get_from_scope(
+                    &l,
+                    Some(parent_scope),
+                    Some(global_scope),
+                    Some(&builtin_names),
+                )
+                .expect("label resolution failed");
                 rendered.push(v.into())
             }
             TV::ParentStackMove(i) => {
@@ -41,14 +45,11 @@ fn resolve_to_program_values(
     rendered
 }
 
-/// Evaluate a resolved `ProgramValue` sequence on a fresh data stack,
-/// reusing the full interpreter dispatch via `interpret_one`. Used to evaluate
-/// multi-token Map key/value expressions inline at render time.
 fn eval_data_seq(
     pvs: Vec<ProgramValue>,
     parent_scope: &HashMap<String, DataValue>,
     global_state: &mut GlobalState,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) -> Vec<DataValue> {
     use crate::invoke::interpret_one;
     let mut data_stack: Vec<TemplateValue> = Vec::new();
@@ -82,7 +83,7 @@ pub fn render_template(
     parent_stack: &mut Vec<TemplateValue>,
     parent_scope: &HashMap<String, DataValue>,
     global_state: &mut GlobalState,
-    builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    builtins: &HashMap<&'static str, BuiltinEntry>,
 ) -> DataValue {
     if template.consumes_stack_entries > parent_stack.len() {
         panic!("Template consumes more stack entries than there are.");

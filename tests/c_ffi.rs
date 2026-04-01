@@ -3,8 +3,6 @@ use std::path::PathBuf;
 
 use sid::*;
 
-// ── Helper to locate test fixtures ───────────────────────────────────────────
-
 fn fixture_header() -> String {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.push("tests/fixtures/test.h");
@@ -13,7 +11,27 @@ fn fixture_header() -> String {
 
 const TEST_LIB: &str = "libm.so.6";
 
-// ── C header parsing tests ────────────────────────────────────────────────────
+fn make_exe_state<'a>(
+    scope: &'a mut HashMap<String, DataValue>,
+    builtins: &'a HashMap<&'static str, BuiltinEntry>,
+) -> ExeState<'a> {
+    ExeState {
+        program_stack: Vec::new(),
+        data_stack: Vec::new(),
+        local_scope: HashMap::new(),
+        scope_stack: Vec::new(),
+        global_state: GlobalState::new(scope),
+        builtins,
+    }
+}
+
+fn call_builtin(
+    entry: &BuiltinEntry,
+    state: &mut ExeState,
+    args: Vec<DataValue>,
+) -> Vec<DataValue> {
+    (entry.exec)(state, args)
+}
 
 #[test]
 fn parses_double_param_double_return() {
@@ -68,8 +86,6 @@ fn error_on_nonexistent_header() {
     assert!(result.is_err(), "should error on missing file");
 }
 
-// ── call_cfuncsig tests ───────────────────────────────────────────────────────
-
 fn get_sqrt_sig() -> CFuncSig {
     parse_c_header(&fixture_header(), TEST_LIB)
         .expect("parse_c_header failed")
@@ -80,7 +96,6 @@ fn get_sqrt_sig() -> CFuncSig {
 
 #[test]
 fn call_sqrt_returns_correct_value() {
-    // c_link_lib must be called first; call_cfuncsig no longer lazy-loads.
     let mut libs = HashMap::new();
     libs.insert(
         TEST_LIB.to_owned(),
@@ -116,13 +131,10 @@ fn call_with_wrong_arg_count_errors() {
 
 #[test]
 fn error_on_unloaded_library() {
-    // Library NOT pre-loaded — must be a fatal error.
     let sig = get_sqrt_sig();
     let result = call_cfuncsig(&sig, Some(DataValue::Float(1.0)), &HashMap::new());
     assert!(result.is_err(), "should error when library is not loaded");
 }
-
-// ── CFuncSig invoke via interpret ─────────────────────────────────────────────
 
 #[test]
 fn interpret_cfuncsig_in_global_scope() {
@@ -130,7 +142,6 @@ fn interpret_cfuncsig_in_global_scope() {
 
     let mut global_scope = HashMap::new();
     let mut global_state = GlobalState::new(&mut global_scope);
-    // Pre-load the library so call_cfuncsig doesn't error on missing lib.
     global_state.libraries.insert(
         TEST_LIB.to_owned(),
         sid::c_ffi_open_library(TEST_LIB).expect("open libm"),
@@ -149,8 +160,6 @@ fn interpret_cfuncsig_in_global_scope() {
     interpret(program, data_stack, global_state, &builtins);
 }
 
-/// A label that resolves to a Float in scope is transparently passed as the
-/// argument to a CFuncSig call — no type-mismatch error.
 #[test]
 fn interpret_cfuncsig_label_arg_resolved() {
     let sqrt_sig = get_sqrt_sig();
@@ -170,7 +179,7 @@ fn interpret_cfuncsig_label_arg_resolved() {
 
     let program = vec![ProgramValue::Invoke];
     let data_stack = vec![
-        DataValue::Label("my_val".to_owned()).into(), // resolved → Float(9.0)
+        DataValue::Label("my_val".to_owned()).into(),
         DataValue::Label("sqrt".to_owned()).into(),
     ];
     let builtins = get_interpret_builtins();
@@ -201,8 +210,6 @@ fn interpret_cfuncsig_label_arg_resolved() {
     }
 }
 
-/// An undefined label passed as a CFuncSig argument panics with a clear
-/// "undefined label" message rather than a cryptic type-mismatch error.
 #[test]
 #[should_panic(expected = "undefined label")]
 fn interpret_cfuncsig_undefined_label_arg_panics() {
@@ -220,15 +227,13 @@ fn interpret_cfuncsig_undefined_label_arg_panics() {
 
     let program = vec![ProgramValue::Invoke];
     let data_stack = vec![
-        DataValue::Label("no_such_val".to_owned()).into(), // undefined → panic
+        DataValue::Label("no_such_val".to_owned()).into(),
         DataValue::Label("sqrt".to_owned()).into(),
     ];
     let builtins = get_interpret_builtins();
     interpret(program, data_stack, global_state, &builtins);
 }
 
-/// Labels inside a variadic argument List are each resolved before the call.
-/// Variadic functions use stack form: fixed params on stack, then a List of variadic args on top.
 #[test]
 fn interpret_cfuncsig_variadic_stack_form() {
     let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
@@ -249,17 +254,14 @@ fn interpret_cfuncsig_variadic_stack_form() {
 
     let program = vec![ProgramValue::Invoke];
     let data_stack = vec![
-        // format string (the 1 fixed param), then empty variadic list
         DataValue::Str(std::ffi::CString::new("").unwrap()).into(),
-        DataValue::List(vec![]).into(), // variadic args (none)
+        DataValue::List(vec![]).into(),
         DataValue::Label("printf".to_owned()).into(),
     ];
     let builtins = get_interpret_builtins();
     interpret(program, data_stack, global_state, &builtins);
 }
 
-/// Multi-param non-variadic function: stack form pushes N items individually.
-/// hypot(3.0, 4.0) should return 5.0.
 #[test]
 fn interpret_cfuncsig_multi_param_stack_form() {
     let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
@@ -279,7 +281,6 @@ fn interpret_cfuncsig_multi_param_stack_form() {
         .insert("hypot".to_owned(), DataValue::CFuncSig(hypot_sig));
 
     let program = vec![ProgramValue::Invoke];
-    // Deepest = first declared param (x=3.0), top = last declared param (y=4.0).
     let data_stack = vec![
         DataValue::Float(3.0).into(),
         DataValue::Float(4.0).into(),
@@ -313,8 +314,6 @@ fn interpret_cfuncsig_multi_param_stack_form() {
     }
 }
 
-/// Multi-param non-variadic function: struct form passes a Map with param names as keys.
-/// hypot({x: 3.0, y: 4.0}) should return 5.0.
 #[test]
 fn interpret_cfuncsig_multi_param_struct_form() {
     let sigs = parse_c_header(&fixture_header(), TEST_LIB).expect("parse_c_header failed");
@@ -370,28 +369,22 @@ fn interpret_cfuncsig_multi_param_struct_form() {
     }
 }
 
-// ── c_load_header builtin tests ───────────────────────────────────────────────
-
 #[test]
 fn c_load_header_str_arg_derives_lib_name() {
-    let builtins = get_interpret_builtins();
-    // Pass just the path — lib_name should be derived from the filename stem ("test").
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let mut result = builtins["c_load_header"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-                DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap()),
-            ))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("c_load_header failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(
+        &builtins["c_load_header"],
+        &mut state,
+        vec![DataValue::Str(
+            std::ffi::CString::new(fixture_header()).unwrap(),
+        )],
+    );
 
     assert_eq!(result.len(), 1);
-    match result.remove(0) {
+    match result.into_iter().next().unwrap() {
         DataValue::Map(entries) => {
             let sqrt = entries
                 .iter()
@@ -408,26 +401,19 @@ fn c_load_header_str_arg_derives_lib_name() {
 
 #[test]
 fn c_load_header_list_arg_uses_explicit_lib_name() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let arg = DataValue::List(vec![
         DataValue::Str(std::ffi::CString::new(fixture_header()).unwrap()),
         DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap()),
     ]);
 
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let mut result = builtins["c_load_header"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("c_load_header failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(&builtins["c_load_header"], &mut state, vec![arg]);
 
     assert_eq!(result.len(), 1);
-    match result.remove(0) {
+    match result.into_iter().next().unwrap() {
         DataValue::Map(entries) => {
             let sqrt = entries
                 .iter()
@@ -443,250 +429,172 @@ fn c_load_header_list_arg_uses_explicit_lib_name() {
 }
 
 #[test]
+#[should_panic(expected = "c_load_header expects")]
 fn c_load_header_error_on_wrong_arg() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["c_load_header"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Int(42),
-        ))],
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(
+        &builtins["c_load_header"],
         &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
+        vec![DataValue::Int(42)],
     );
-    assert!(result.is_err());
 }
-
-// ── c_link_lib builtin tests ──────────────────────────────────────────────────
 
 #[test]
 fn c_link_lib_preloads_library() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    builtins["c_link_lib"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-                DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap()),
-            ))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("c_link_lib failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(
+        &builtins["c_link_lib"],
+        &mut state,
+        vec![DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap())],
+    );
     assert!(
-        state.libraries.contains_key(TEST_LIB),
+        state.global_state.libraries.contains_key(TEST_LIB),
         "library should be in central store"
     );
 }
 
 #[test]
 fn c_link_lib_list_arg_registers_under_name() {
-    let builtins = get_interpret_builtins();
-    let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
+    let _builtins = get_interpret_builtins();
     let arg = DataValue::List(vec![
         DataValue::Str(std::ffi::CString::new(TEST_LIB).unwrap()),
         DataValue::Str(std::ffi::CString::new("math").unwrap()),
     ]);
-    builtins["c_link_lib"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("c_link_lib with list failed");
+    let mut scope = HashMap::new();
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(&builtins["c_link_lib"], &mut state, vec![arg]);
     assert!(
-        state.libraries.contains_key("math"),
+        state.global_state.libraries.contains_key("math"),
         "library should be registered under 'math'"
     );
     assert!(
-        !state.libraries.contains_key(TEST_LIB),
+        !state.global_state.libraries.contains_key(TEST_LIB),
         "should not be registered under path"
     );
 }
 
 #[test]
+#[should_panic]
 fn c_link_lib_error_on_missing_library() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["c_link_lib"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Str(std::ffi::CString::new("/nonexistent/lib.so").unwrap()),
-        ))],
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(
+        &builtins["c_link_lib"],
         &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
+        vec![DataValue::Str(
+            std::ffi::CString::new("/nonexistent/lib.so").unwrap(),
+        )],
     );
-    assert!(result.is_err());
 }
 
 #[test]
+#[should_panic(expected = "c_link_lib expects")]
 fn c_link_lib_error_on_wrong_arg() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["c_link_lib"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Int(42),
-        ))],
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(
+        &builtins["c_link_lib"],
         &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
+        vec![DataValue::Int(42)],
     );
-    assert!(result.is_err());
 }
-
-// ── drop builtin tests ────────────────────────────────────────────────────────
 
 #[test]
 fn drop_discards_value() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["drop"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-                DataValue::Int(99),
-            ))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("drop failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(&builtins["drop"], &mut state, vec![DataValue::Int(99)]);
     assert!(result.is_empty(), "drop should return nothing");
 }
 
-// ── eq builtin tests ──────────────────────────────────────────────────────────
-
 #[test]
 fn eq_equal_values_returns_true() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["eq"]
-        .execute(
-            &mut vec![
-                sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
-                sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(3))),
-            ],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("eq failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(
+        &builtins["eq"],
+        &mut state,
+        vec![DataValue::Int(3), DataValue::Int(3)],
+    );
     assert_eq!(result, vec![DataValue::Bool(true)]);
 }
 
 #[test]
 fn eq_unequal_values_returns_false() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["eq"]
-        .execute(
-            &mut vec![
-                sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(1))),
-                sid::TemplateValue::Literal(sid::ProgramValue::Data(DataValue::Int(2))),
-            ],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("eq failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(
+        &builtins["eq"],
+        &mut state,
+        vec![DataValue::Int(1), DataValue::Int(2)],
+    );
     assert_eq!(result, vec![DataValue::Bool(false)]);
 }
 
 #[test]
+#[should_panic(expected = "eq: expected an argument")]
 fn eq_error_on_wrong_arg() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    // Stack with only one value — should error
-    let result = builtins["eq"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Int(1),
-        ))],
-        &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
-    );
-    assert!(result.is_err());
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(&builtins["eq"], &mut state, vec![DataValue::Int(1)]);
 }
-
-// ── assert builtin tests ──────────────────────────────────────────────────────
 
 #[test]
 fn assert_passes_on_true() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["assert"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-                DataValue::Bool(true),
-            ))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("assert should not fail on true");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(&builtins["assert"], &mut state, vec![DataValue::Bool(true)]);
     assert!(result.is_empty());
 }
 
 #[test]
+#[should_panic(expected = "assertion failed")]
 fn assert_errors_on_false() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["assert"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Bool(false),
-        ))],
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(
+        &builtins["assert"],
         &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
+        vec![DataValue::Bool(false)],
     );
-    assert!(result.is_err());
 }
 
 #[test]
+#[should_panic(expected = "assert expects Bool")]
 fn assert_error_on_non_bool() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["assert"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Int(1),
-        ))],
-        &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
-    );
-    assert!(result.is_err());
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(&builtins["assert"], &mut state, vec![DataValue::Int(1)]);
 }
-
-// ── c_load_header is comptime-available ───────────────────────────────────────
 
 #[test]
 fn c_load_header_available_at_comptime() {
     let builtins = get_comptime_builtins();
-    // must be present
     for name in &[
         "c_load_header",
         "load_scope",
@@ -703,7 +611,6 @@ fn c_load_header_available_at_comptime() {
             "{name} must be a comptime builtin"
         );
     }
-    // must NOT be present
     for name in &["c_link_lib", "ptr_read_cstr"] {
         assert!(
             !builtins.contains_key(name),
@@ -712,13 +619,9 @@ fn c_load_header_available_at_comptime() {
     }
 }
 
-// ── load_scope builtin tests ──────────────────────────────────────────────────
-
 #[test]
 fn load_scope_inserts_struct_fields_into_global_scope() {
-    let builtins = get_interpret_builtins();
-    let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
+    let _builtins = get_interpret_builtins();
     let arg = DataValue::Map(vec![
         (
             DataValue::Label("sqrt".to_owned()),
@@ -726,69 +629,47 @@ fn load_scope_inserts_struct_fields_into_global_scope() {
         ),
         (DataValue::Label("answer".to_owned()), DataValue::Int(42)),
     ]);
-    let result = builtins["load_scope"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(arg))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("load_scope failed");
+    let mut scope = HashMap::new();
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(&builtins["load_scope"], &mut state, vec![arg]);
     assert!(result.is_empty(), "load_scope should return nothing");
-    assert!(state.scope.contains_key("sqrt"), "sqrt should be in scope");
-    assert_eq!(state.scope.get("answer"), Some(&DataValue::Int(42)));
+    assert!(
+        state.global_state.scope.contains_key("sqrt"),
+        "sqrt should be in scope"
+    );
+    assert_eq!(
+        state.global_state.scope.get("answer"),
+        Some(&DataValue::Int(42))
+    );
 }
 
 #[test]
+#[should_panic(expected = "load_scope expects")]
 fn load_scope_error_on_non_struct() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["load_scope"].execute(
-        &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-            DataValue::Int(1),
-        ))],
-        &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
-    );
-    assert!(result.is_err());
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(&builtins["load_scope"], &mut state, vec![DataValue::Int(1)]);
 }
-
-// ── clone builtin tests ───────────────────────────────────────────────────────
 
 #[test]
 fn clone_duplicates_value() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["clone"]
-        .execute(
-            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
-                DataValue::Int(7),
-            ))],
-            &mut state,
-            &mut vec![],
-            &mut HashMap::new(),
-            &builtins,
-        )
-        .expect("clone failed");
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    let result = call_builtin(&builtins["clone"], &mut state, vec![DataValue::Int(7)]);
     assert_eq!(result, vec![DataValue::Int(7), DataValue::Int(7)]);
 }
 
 #[test]
+#[should_panic(expected = "clone: expected an argument")]
 fn clone_error_on_no_value() {
-    let builtins = get_interpret_builtins();
+    let _builtins = get_interpret_builtins();
     let mut scope = HashMap::new();
-    let mut state = GlobalState::new(&mut scope);
-    let result = builtins["clone"].execute(
-        &mut vec![],
-        &mut state,
-        &mut vec![],
-        &mut HashMap::new(),
-        &builtins,
-    );
-    assert!(result.is_err());
+    let builtins = get_interpret_builtins();
+    let mut state = make_exe_state(&mut scope, &builtins);
+    call_builtin(&builtins["clone"], &mut state, vec![]);
 }

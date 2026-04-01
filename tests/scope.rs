@@ -36,6 +36,7 @@ fn run_snippet(source: &str) -> Vec<DataValue> {
         local_scope: HashMap::new(),
         scope_stack: Vec::new(),
         global_state,
+        builtins: &builtins,
     };
     while !exe_state.program_stack.is_empty() {
         interpret_one(
@@ -83,6 +84,7 @@ fn run_and_check_outer_scope(source: &str) -> HashMap<String, DataValue> {
         local_scope: HashMap::new(),
         scope_stack: Vec::new(),
         global_state,
+        builtins: &builtins,
     };
     while !exe_state.program_stack.is_empty() {
         interpret_one(
