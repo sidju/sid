@@ -3,6 +3,12 @@
 - Consider how comptime should interact with render, should we have comptime render?
 - Decide our attitude to `clone`, `drop`, `get`, and such built-ins that should be
   redundant with `($1 $1)!`, `($2)!`, `($label)!`. Should they exist?
+- Add `global` built-in: pops `{name: label, value: Any}` and writes to global scope.
+  Comptime only — prevents runtime write-order races in global scope.
+- Add `swap` built-in: equivalent to `($2 $1)!` but more readable.
+- Add `$n.field` syntax: access a named field on a map value at a stack position.
+  For example `$1.x` would extract the `x` field from the topmost consumed map
+  value, eliminating manual field extraction patterns.
 
 ## Static analysis (future)
 
