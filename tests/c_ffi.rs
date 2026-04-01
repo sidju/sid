@@ -690,6 +690,7 @@ fn c_load_header_available_at_comptime() {
     for name in &[
         "c_load_header",
         "load_scope",
+        "clone",
         "drop",
         "eq",
         "assert",
@@ -748,6 +749,42 @@ fn load_scope_error_on_non_struct() {
         &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
             DataValue::Int(1),
         ))],
+        &mut state,
+        &mut vec![],
+        &mut HashMap::new(),
+        &builtins,
+    );
+    assert!(result.is_err());
+}
+
+// ── clone builtin tests ───────────────────────────────────────────────────────
+
+#[test]
+fn clone_duplicates_value() {
+    let builtins = get_interpret_builtins();
+    let mut scope = HashMap::new();
+    let mut state = GlobalState::new(&mut scope);
+    let result = builtins["clone"]
+        .execute(
+            &mut vec![sid::TemplateValue::Literal(sid::ProgramValue::Data(
+                DataValue::Int(7),
+            ))],
+            &mut state,
+            &mut vec![],
+            &mut HashMap::new(),
+            &builtins,
+        )
+        .expect("clone failed");
+    assert_eq!(result, vec![DataValue::Int(7), DataValue::Int(7)]);
+}
+
+#[test]
+fn clone_error_on_no_value() {
+    let builtins = get_interpret_builtins();
+    let mut scope = HashMap::new();
+    let mut state = GlobalState::new(&mut scope);
+    let result = builtins["clone"].execute(
+        &mut vec![],
         &mut state,
         &mut vec![],
         &mut HashMap::new(),

@@ -67,13 +67,13 @@ fn do_while_runs_once_when_condition_false() {
     assert_eq!(stack, vec![DataValue::Int(0)]);
 }
 
-/// Loop runs exactly twice: body flips the bool, condition duplicates and checks it.
+/// Loop runs exactly twice: body flips the bool, condition clones and checks it.
 #[test]
 fn do_while_two_iterations() {
     // Stack: false.
-    // Iter 1: body not! → true;  cond ($1 $1)! → [true, true];  CondLoop pops true  → continue.
-    // Iter 2: body not! → false; cond ($1 $1)! → [false, false]; CondLoop pops false → exit.
-    let stack = run_snippet("false (not!) (($1 $1)!) do_while !");
+    // Iter 1: body not! → true;  cond clone → [true, true];  CondLoop pops true  → continue.
+    // Iter 2: body not! → false; cond clone → [false, false]; CondLoop pops false → exit.
+    let stack = run_snippet("false (not!) (clone!) do_while !");
     assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
@@ -82,10 +82,10 @@ fn do_while_two_iterations() {
 #[test]
 fn do_while_body_passes_value_to_condition() {
     // Stack: true. expected_len = 1.
-    // Body: not! → false, ($1 $1)! → [false, false] (size 2 = expected_len + 1).
-    // Condition: () empty — duplicate is already the Bool. CondLoop pops false → exit.
+    // Body: not! → false, clone! → [false, false] (size 2 = expected_len + 1).
+    // Condition: () empty — clone is already the Bool. CondLoop pops false → exit.
     // Final stack: [false].
-    let stack = run_snippet("true (not! ($1 $1)!) () do_while !");
+    let stack = run_snippet("true (not! clone!) () do_while !");
     assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
@@ -93,14 +93,14 @@ fn do_while_body_passes_value_to_condition() {
 #[test]
 #[should_panic(expected = "condition must leave exactly one Bool")]
 fn do_while_condition_wrong_size() {
-    // Body is net-0 (($1 $1)! then drop). Condition pushes two values instead of one Bool.
-    run_snippet("42 (($1 $1)! drop!) (($1 $1 $1)!) do_while !");
+    // Body is net-0 (clone then drop). Condition pushes two values instead of one Bool.
+    run_snippet("42 (clone! drop!) (clone! clone!) do_while !");
 }
 
 /// Condition returning a non-Bool panics.
 #[test]
 #[should_panic(expected = "condition must leave a Bool")]
 fn do_while_condition_non_bool() {
-    // Body is net-0. Condition leaves an Int (duplicate of 42) instead of a Bool.
-    run_snippet("42 (($1 $1)! drop!) (($1 $1)!) do_while !");
+    // Body is net-0. Condition leaves an Int (clone of 42) instead of a Bool.
+    run_snippet("42 (clone! drop!) (clone!) do_while !");
 }

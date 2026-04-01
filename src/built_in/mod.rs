@@ -323,6 +323,28 @@ impl InterpretBuiltIn for LoadScope {
     }
 }
 
+// ── clone ─────────────────────────────────────────────────────────────────────
+
+/// Built-in that duplicates the top-of-stack value.
+///
+/// Pops one value and pushes it back twice.
+#[derive(Debug)]
+struct Clone;
+
+impl InterpretBuiltIn for Clone {
+    fn execute(
+        &self,
+        data_stack: &mut Vec<crate::TemplateValue>,
+        _global_state: &mut GlobalState<'_>,
+        _program_stack: &mut Vec<crate::ProgramValue>,
+        _local_scope: &mut HashMap<String, DataValue>,
+        _builtins: &HashMap<&str, &dyn InterpretBuiltIn>,
+    ) -> anyhow::Result<Vec<DataValue>> {
+        let v = pop_arg(data_stack, "clone")?;
+        Ok(vec![v.clone(), v])
+    }
+}
+
 // ── drop ──────────────────────────────────────────────────────────────────────
 
 /// Built-in that discards the top-of-stack value.
@@ -1330,6 +1352,7 @@ static LOAD_LOCAL: LoadLocal = LoadLocal;
 static C_LOAD_HEADER: CLoadHeader = CLoadHeader;
 static C_LINK_LIB: CLinkLib = CLinkLib;
 static LOAD_SCOPE: LoadScope = LoadScope;
+static CLONE: Clone = Clone;
 static DROP: Drop = Drop;
 static EQ: Eq = Eq;
 static ASSERT: Assert = Assert;
@@ -1362,6 +1385,7 @@ fn register_shared(m: &mut HashMap<&'static str, &'static dyn InterpretBuiltIn>)
     m.insert("load_scope", &LOAD_SCOPE);
     m.insert("local", &LOCAL);
     m.insert("load_local", &LOAD_LOCAL);
+    m.insert("clone", &CLONE);
     m.insert("drop", &DROP);
     m.insert("eq", &EQ);
     m.insert("assert", &ASSERT);

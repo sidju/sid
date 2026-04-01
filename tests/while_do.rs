@@ -66,12 +66,12 @@ fn while_do_zero_iterations() {
 /// Loop runs exactly once: condition true on entry, false after body increments value.
 #[test]
 fn while_do_single_iteration() {
-    // Stack: 0. Condition: duplicate top and check == 0 (true first time, false after).
+    // Stack: 0. Condition: clone top and check == 0 (true first time, false after).
     // Body: replace top with top+1 using stack reorder + drop.
     // After one iteration: stack is 1. Condition: 1 == 0 → false. Done.
     let stack = run_snippet(
         "0 \
-     (($1 $1)! 0 eq!) \
+     (clone! 0 eq!) \
      (1 ($2 $1)! drop!) \
      while_do !",
     );
@@ -83,11 +83,11 @@ fn while_do_single_iteration() {
 #[test]
 fn while_do_initial_cond_consumes_setup_value() {
     // Stack: [true, false] (true deeper, false on top).
-    // Initial cond (drop! ($1 $1)!): drops false, duplicates true → [true, true]. Pops true → expected_len=1.
-    // Body (not! ($1 $1)!): not!→false, duplicate→[false,false] (body net+1, size=expected_len+1).
-    // Cond (drop! ($1 $1)!): drop false, duplicate false→[false,false]. Pops false→exit.
+    // Initial cond (drop! clone!): drops false, clones true → [true, true]. Pops true → expected_len=1.
+    // Body (not! clone!): not!→false, clone!→[false,false] (body net+1, size=expected_len+1).
+    // Cond (drop! clone!): drop false, clone false→[false,false]. Pops false→exit.
     // Final stack: [false].
-    let stack = run_snippet("true false (drop! ($1 $1)!) (not! ($1 $1)!) while_do !");
+    let stack = run_snippet("true false (drop! clone!) (not! clone!) while_do !");
     assert_eq!(stack, vec![DataValue::Bool(false)]);
 }
 
@@ -95,15 +95,15 @@ fn while_do_initial_cond_consumes_setup_value() {
 #[test]
 #[should_panic(expected = "condition must leave exactly one Bool")]
 fn while_do_condition_wrong_size() {
-    // Initial cond (true) enters loop. Body (($1 $1 $1)!) grows stack to 3.
+    // Initial cond (true) enters loop. Body (clone! clone!) grows stack to 3.
     // Subsequent cond (true) pushes one more → size 4. CondLoop expects 2. Fires.
-    run_snippet("42 (true) (($1 $1 $1)!) while_do !");
+    run_snippet("42 (true) (clone! clone!) while_do !");
 }
 
 /// Condition returning a non-Bool panics.
 #[test]
 #[should_panic(expected = "condition must leave a Bool")]
 fn while_do_condition_non_bool() {
-    // Condition pushes a duplicate of the Int (not a Bool) → type check fires.
-    run_snippet("42 (($1 $1)!) (drop!) while_do !");
+    // Condition pushes a clone of the Int (not a Bool) → type check fires.
+    run_snippet("42 (clone!) (drop!) while_do !");
 }
