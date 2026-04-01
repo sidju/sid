@@ -150,29 +150,37 @@ one and call it with `!`:
 Substacks are first-class values: they can be stored, passed as arguments, and
 invoked at any point.
 
-### Built-in function wrapper
+### Built-in function implementation
 
-Built-in functions are registered as implementations of `InterpretBuiltIn`.
-Rather than writing a wrapper per function, a generic `wrap` adapter is used:
+Built-in functions are defined as plain Rust functions with a uniform signature:
 
 ```rust
-builtins.insert("upper",    wrap(|s: String| s.to_uppercase()));
-builtins.insert("add",      wrap(|(a, b): (i64, i64)| a + b));
-builtins.insert("distance", wrap(|p: Point| ((p.x*p.x + p.y*p.y) as f64).sqrt()));
+fn builtin_name(state: &mut ExeState, args: Vec<DataValue>) -> Vec<DataValue>
 ```
 
-This works through two conversion traits:
+Each builtin is registered via a `BuiltinEntry` struct:
 
-- **`FromDataValue`** — extracts a Rust type from a `DataValue`.
-  - Primitives (`i64`, `f64`, `String`, …) match their `DataValue` counterpart.
-  - Rust tuples `(A, B, …)` destructure a `DataValue::List` positionally.
-  - Rust structs implement it by destructuring a label-keyed `DataValue::Map` by field name.
-- **`IntoDataValue`** — converts a Rust type back into an `Option<DataValue>`.
-  - `()` maps to `None` (zero-return function).
-  - Everything else wraps to `Some(DataValue::…)`.
+```rust
+BuiltinEntry {
+    name: "add",
+    args: vec![SidType::Int, SidType::Int],
+    ret: vec![SidType::Int],
+    exec: add_builtin,
+}
+```
 
-The `wrap` function uses the Rust tuple-impl pattern (one blanket impl per arity,
-written once) to produce an `InterpretBuiltIn` from any compatible `Fn`.
+The `args` and `ret` fields declare the expected type signature for static
+validation. The `exec` function receives an `ExeState` (providing access to
+stack, scope, and runtime context) and a vector of already-validated argument
+values, returning a vector of result values.
+
+Built-ins are organized into submodules by category:
+
+- `control_flow` — `while_do`, `do_while`, `match`
+- `ffi` — `c_load_header`, `c_link_lib`, `ptr_read_cstr`, `ptr_cast`
+- `scope` — `get`, `get_local`, `get_global`, `local`, `load_local`, `load_scope`
+- `stack` — `clone`, `drop`, `eq`, `assert`, `not`, `debug_stack`
+- `type_ops` — `fn`, `typed_args`, `typed_rets`, `untyped_args`, `untyped_rets`, type constructors
 
 ### Built-in function availability
 

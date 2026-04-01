@@ -5,7 +5,7 @@ FFI friendliness, Joy-like in its functional composition via
 quotations/closures, with a simple flexible type system and built-in lightweigth
 data structures.
 
-See [`DOCUMENTATION.md`](DOCUMENTATION.md) for an introduction into the language
+See [`docs/README.md`](docs/README.md) for an introduction into the language
 and its syntax.
   
 See [`SPECULATIONS.md`](SPECULATIONS.md) for wilder ideas for where the language
