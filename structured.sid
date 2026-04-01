@@ -31,8 +31,8 @@ local!
 
 # We can declare a function to print all lines in file pointer
 print_file {
-  buf_size: $types.int,
-  file_ptr: $types.any ptr@!,
+  buf_size: @types.int,
+  file_ptr: @types.any ptr@!,
 } [] (
 
   # We begin by allocating the required buffer
@@ -42,18 +42,19 @@ print_file {
 
   # With everything prepared we start a loop substack
   # (Since we take nothing from the stack defining args is a bit pointless)
-  {:} [$types.any ptr@!] (
+  {:} [@types.any ptr@!] (
     # The data we need exists in parent scope, but not our local scope
-    # so we forward it in
+    # so we forward it in (thus this function must be runtime declared)
     buf $buf local!
     buf_size $buf_size local!
     file_ptr $file_ptr local!
     # After that we can template with them
     buf buf_size file_ptr fgets!
-  ) typed_rets@! typed_args@!
+  ) typed_rets! typed_args!
+
   # The condition body is required to return a bool to indicate if the loop
   # is done, aside from that it can do weird stuff like printing
-  {result: $types.any ptr@!} [$types.bool] (
+  {result: @types.any ptr@!} [@types.bool] (
     # We need this little dance to get the result onto the stack for match
     # (which accepts label arguments, wherefore it doesn't auto-convert)
     ($result)! {

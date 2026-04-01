@@ -6,10 +6,6 @@ fn comptime_label(name: &str) -> TemplateValue {
     TemplateValue::ComptimeLabel(name.to_owned())
 }
 
-fn label(s: &str) -> TemplateValue {
-    DataValue::Label(s.to_owned()).into()
-}
-
 #[test]
 fn comptime_label_resolves_from_scope() {
     let mut scope = HashMap::new();
@@ -105,4 +101,40 @@ fn comptime_label_numeric_is_parse_error() {
         "expected parse error for @<integer>, got {:?}",
         result
     );
+}
+
+#[test]
+fn comptime_label_parsed_without_at_sign() {
+    // Verify that @types.int parses as ComptimeLabel("types.int"), not ComptimeLabel("@types.int")
+    let (parsed, _) = sid::parse_str("(@types.int)").expect("parse failed");
+    assert_eq!(
+        parsed,
+        vec![TemplateValue::Literal(ProgramValue::Template(Template {
+            data: TemplateData::Substack(vec![TemplateValue::ComptimeLabel(
+                "types.int".to_owned()
+            )]),
+            consumes_stack_entries: 0,
+        }))]
+    );
+}
+
+#[test]
+fn comptime_label_resolves_dotted_name() {
+    // @types.int should resolve when "types" is a map with "int" as a field
+    let mut types_map = HashMap::new();
+    types_map.insert("int".to_owned(), DataValue::Type(SidType::Int));
+
+    let mut scope = HashMap::new();
+    scope.insert(
+        "types".to_owned(),
+        DataValue::Map(vec![(
+            DataValue::Label("int".to_owned()),
+            DataValue::Type(SidType::Int),
+        )]),
+    );
+
+    let input = vec![comptime_label("types.int")];
+    let result = comptime_pass(input, &HashMap::new(), &mut scope).expect("comptime_pass failed");
+
+    assert_eq!(result, vec![DataValue::Type(SidType::Int).into()]);
 }

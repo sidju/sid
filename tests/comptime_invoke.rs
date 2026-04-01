@@ -303,7 +303,8 @@ fn error_comptime_invoke_unrendered_template_as_arg() {
         },
     );
 
-    let unrendered = Template::substack((vec![], 0));
+    // A template with a $n reference is non-concrete and cannot be rendered at comptime.
+    let unrendered = Template::substack((vec![TemplateValue::ParentStackMove(1)], 1));
     ComptimeErrorFixture {
         input: vec![
             TemplateValue::Literal(ProgramValue::Template(unrendered)),
