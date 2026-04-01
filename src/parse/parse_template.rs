@@ -34,6 +34,28 @@ pub fn parse_parent_access(input: &mut Peekable<Graphemes>) -> Result<TemplateVa
     })
 }
 
+/// Parse an `@name` (comptime global label) access.
+///
+/// The iterator must be positioned **after** the `@` (already consumed by the caller).
+/// `@<integer>` is rejected — comptime has no data stack.
+pub fn parse_global_access(input: &mut Peekable<Graphemes>) -> Result<TemplateValue> {
+    let mut agg = String::new();
+    while let Some(&ch) = input.peek() {
+        if super::is_key_char(ch) {
+            break;
+        }
+        agg.push_str(ch);
+        input.next();
+    }
+    if agg.is_empty() {
+        bail!("bare '@' with no label name");
+    }
+    if agg.chars().all(|c| c.is_ascii_digit()) {
+        bail!("@<integer> is invalid; comptime has no data stack");
+    }
+    Ok(TemplateValue::ComptimeLabel(agg))
+}
+
 ///
 /// For `{…}` the content is scanned at the first parsing level to decide
 /// whether it is a set or a struct (struct has at least one `:` at depth 0).

@@ -40,6 +40,12 @@ fn resolve_to_program_values(
                     .clone();
                 rendered.push(value.into());
             }
+            TV::ComptimeLabel(l) => {
+                panic!(
+                    "@{} should have been resolved at comptime; render pass should never see it",
+                    l
+                );
+            }
         }
     }
     rendered

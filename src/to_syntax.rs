@@ -140,6 +140,7 @@ impl ToSyntax for TemplateValue {
         match self {
             TemplateValue::ParentLabel(v) => format!("${}", v),
             TemplateValue::ParentStackMove(v) => format!("${}", v),
+            TemplateValue::ComptimeLabel(v) => format!("@{}", v),
             TemplateValue::Literal(v) => v.to_syntax(),
         }
     }

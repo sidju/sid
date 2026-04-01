@@ -14,7 +14,7 @@ use parse_char::parse_char;
 pub use parse_label::parse_label;
 use parse_number::parse_number;
 use parse_string::parse_string;
-use parse_template::{parse_parent_access, parse_template};
+use parse_template::{parse_global_access, parse_parent_access, parse_template};
 
 /// Parse a complete source string into a flat sequence of [`TemplateValue`]s
 /// plus the number of parent-stack entries the sequence consumes.
@@ -103,13 +103,13 @@ pub(super) fn parse_template_value(
                 return Ok(Some(ProgramValue::Invoke.into()));
             }
             "@" => {
-                iter.next();
+                iter.next(); // consume @
                 match iter.peek().map(|x| *x) {
                     Some("!") => {
-                        iter.next();
+                        iter.next(); // consume !
                         return Ok(Some(ProgramValue::ComptimeInvoke.into()));
                     }
-                    other => bail!("expected '!' after '@', got {:?}", other),
+                    _ => return Ok(Some(parse_global_access(iter)?)),
                 }
             }
             // Stack / scope substitution inside a template.

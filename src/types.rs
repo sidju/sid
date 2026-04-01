@@ -353,7 +353,7 @@ pub enum TemplateData {
 pub enum TemplateValue {
     ParentLabel(String),
     ParentStackMove(usize),
-    //  ParentStackCopy(usize), // Maybe?
+    ComptimeLabel(String),
     Literal(ProgramValue),
 }
 impl From<DataValue> for TemplateValue {

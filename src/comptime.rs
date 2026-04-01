@@ -76,6 +76,13 @@ pub fn comptime_pass(
                 stack = exe_state.data_stack;
             }
 
+            TemplateValue::ComptimeLabel(label) => {
+                let value = scope.get(&label).cloned().ok_or_else(|| {
+                    anyhow::anyhow!("@{}: not found in global scope at comptime", label)
+                })?;
+                stack.push(TemplateValue::Literal(ProgramValue::Data(value)));
+            }
+
             other => stack.push(other),
         }
     }
